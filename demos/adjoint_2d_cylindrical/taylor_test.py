@@ -1,6 +1,6 @@
-# from gadopt import *
+from gadopt import *
 import numpy as np
-# from firedrake_adjoint import *
+from firedrake_adjoint import *
 
 newton_stokes_solver_parameters = {
     "snes_type": "newtonls",
@@ -32,13 +32,10 @@ r_410 = rmax - (rmax_earth - r_410_earth)/(rmax_earth - rmin_earth)
 r_660 = rmax - (rmax_earth - r_660_earth)/(rmax_earth - rmin_earth)
 
 
-def taylor_test_all_components(indict):
+def taylor_test_all_components(in_dict):
     alpha_T, alpha_d, alpha_s, alpha_u = (
-        indict.get("alpha_T"), indict.get("alpha_d"),
-        indict.get("alpha_s"), indict.get("alpha_u"))
-
-    tape = get_working_tape()
-    tape.clear_tape()
+        in_dict.get("alpha_T"), in_dict.get("alpha_d"),
+        in_dict.get("alpha_s"), in_dict.get("alpha_u"))
 
     with CheckpointFile('Checkpoint_State.h5', mode='r') as chckpoint:
         mesh = chckpoint.load_mesh("firedrake_default_extruded")
@@ -175,7 +172,7 @@ def taylor_test_all_components(indict):
     ic_projection_problem = LinearVariationalProblem(
         q * TrialFunction(Q) * dx,
         q * Tic * dx,
-        energy_solver.T_old,
+        T,
         bcs=energy_solver.strong_bcs,
     )
     ic_projection_solver = LinearVariationalSolver(ic_projection_problem)
@@ -188,7 +185,6 @@ def taylor_test_all_components(indict):
     T_.assign(Tic)
     bc_solver.solve()
     ic_projection_solver.solve()
-    T.assign(energy_solver.T_old)
 
     checkpoint_file = CheckpointFile("Checkpoint_State.h5", "r")
     checkpoint_file.save_mesh(mesh)
@@ -199,7 +195,7 @@ def taylor_test_all_components(indict):
     u_misfit = 0.
 
     # splitting and renaming the functions for visualisation
-    u_, p_ = z.subfunctions
+    u_, p_ = z.split()
     u_.rename("Velocity")
     p_.rename("Pressure")
 
@@ -248,11 +244,11 @@ def taylor_test_all_components(indict):
             (alpha_s * norm_final_state / norm_grad_Taverage *
                 0.5*(dot(grad(Tic - Taverage), grad(Tic - Taverage)))
              )
-        ) * dx
+        ) * dx(domain=mesh)
     )
 
     # Adding the velocity component
-    objective += u_misfit
+    objective += alpha_u * u_misfit
 
     # Stoping the taping now
     pause_annotation()
@@ -261,13 +257,6 @@ def taylor_test_all_components(indict):
     reduced_functional = ReducedFunctional(
         objective,
         control)
-
-    # Set up bounds, which will later be used to
-    # enforce boundary conditions in inversion:
-    T_lb = Function(W, name="LB_Temperature")
-    T_ub = Function(W, name="UB_Temperature")
-    T_lb.assign(0.0)
-    T_ub.assign(1.0)
 
     Delta_temp = Function(W, name="Delta_Temperature")
     Delta_temp.dat.data[:] = np.random.random(Delta_temp.dat.data.shape)
@@ -281,17 +270,18 @@ def taylor_test_all_components(indict):
             f"alpha_d: {alpha_d:.2e}, "
             f"alpha_s: {alpha_s:.2e}, "
             f"alpha_u: {alpha_u:.2e}, "
-            f"alpha_u: {minconv:.8e}\n"
+            f"conversion: {minconv:.8e}\n"
         )
     )
 
 
-for case in ["alpha_T", "alpha_u", "alpha_d", "alpha_s"]:
-    dict_base = {
-        "alpha_T": 0.0,
-        "alpha_u": 0.0,
-        "alpha_d": 0.0,
-        "alpha_s": 0.0
-    }
-    dict_base[case] = 1.0
-    taylor_test_all_components(dict_base)
+if __name__ == "__main__":
+    for prm in ["alpha_u", "alpha_s"]:
+        prm_dictionary = {
+            "alpha_T": 0.0,
+            "alpha_u": 0.0,
+            "alpha_d": 0.0,
+            "alpha_s": 0.0
+        }
+        prm_dictionary[prm] = 1.0
+        taylor_test_all_components(prm_dictionary)

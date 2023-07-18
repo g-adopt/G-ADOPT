@@ -159,7 +159,7 @@ for timestep in range(0, max_timesteps):
     stokes_solver.solve()
 
     # store velocity for return
-    checkpoint_file.save_function(u_, idx=timestep)
+    checkpoint_file.save_function(u_, name="Velocity", idx=timestep)
 
     # Temperature system:
     energy_solver.solve()
