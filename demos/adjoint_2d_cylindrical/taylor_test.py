@@ -1,6 +1,6 @@
-# from gadopt import *
+from gadopt import *
 import numpy as np
-# from firedrake_adjoint import *
+from firedrake_adjoint import *
 
 newton_stokes_solver_parameters = {
     "snes_type": "newtonls",
@@ -30,6 +30,12 @@ r_410_earth = rmax_earth - 410  # 410 radius [km]
 r_660_earth = rmax_earth - 660  # 660 raidus [km]
 r_410 = rmax - (rmax_earth - r_410_earth)/(rmax_earth - rmin_earth)
 r_660 = rmax - (rmax_earth - r_660_earth)/(rmax_earth - rmin_earth)
+
+fi_name = "params.log"
+
+alpha_d = 0.1
+alpha_s = 0.1
+alpha_u = 0.1
 
 with CheckpointFile('Checkpoint_State.h5', mode='r') as chckpoint:
     mesh = chckpoint.load_mesh("firedrake_default_extruded")
@@ -63,14 +69,13 @@ delta_t = Constant(5e-6)  # Initial time-step
 # Without a restart to continue from, our initial guess is the final state of the forward run
 # We need to project the state from Q2 into Q1
 Tic = Function(W, name="Initial Temperature")
-Taverage = Function(W, name="TemperatureAverage")
 with CheckpointFile("Checkpoint_State.h5", "r") as f:
     Tic.project(
         f.load_function(
             mesh,
             "Temperature",
             idx=max_timesteps-1))
-    Tic.project(
+    Taverage = (
         f.load_function(
             mesh,
             "AverageTemperature",
@@ -188,6 +193,9 @@ checkpoint_file = CheckpointFile("Checkpoint_State.h5", "w")
 checkpoint_file.save_mesh(mesh)
 checkpoint_file.save_function(Taverage, name="AverageTemperature", idx=0)
 
+# velocity compunent of misfit
+u_misfit = 0.
+
 # splitting and renaming the functions for visualisation
 u_, p_ = z.subfunctions
 u_.rename("Velocity")
@@ -199,10 +207,14 @@ for timestep in range(0, max_timesteps):
     # Solve Stokes sytem:
     stokes_solver.solve()
 
-    # TODO: Load the velocity
-    # checkpoint_file.save_function(u_, idx=timestep)
+    # Load the velocity
+    uobs = checkpoint_file.load_function(
+        mesh,
+        name="Velocity",
+        idx=timestep)
 
-    # TOOD: Compute misfit for velocity
+    # Compute misfit for velocity
+    u_misfit += assemble(0.5 * (uobs - u_)**2 * ds_t)
 
     # Temperature system:
     energy_solver.solve()
@@ -210,10 +222,58 @@ for timestep in range(0, max_timesteps):
 checkpoint_file.close()
 
 
-# TODO Load average temperature Observed
+with CheckpointFile('Checkpoint_State.h5', mode="r") as f:
+    Tobs = (
+        f.load_function(
+            mesh,
+            "Temperature",
+            idx=max_timesteps))
 
-# TODO Define the misfit
+norm_Tavereage = assemble(
+    0.5*(Taverage)**2 * dx)
+norm_final_state = assemble(
+    0.5*(Tobs)**2 * dx)
+norm_grad_Taverage = assemble(
+    0.5*dot(grad(Taverage), grad(Taverage)) * dx)
+norm_u_surface = assemble(
+    0.5 * (uobs)**2 * ds_t)
 
-# TODO Calculate gradient (reduced_functional)
+# surface velocity misfit
+u_misfit = norm_final_state / norm_u_surface * u_misfit / (max_timesteps)
 
-# TODO Taylor Test
+objective = assemble(
+    (
+        0.5*(T - Tobs)**2 +
+        alpha_d * norm_final_state / norm_Tavereage * 0.5*(
+            Tic - Taverage)**2 +
+        (alpha_s * norm_final_state / norm_grad_Taverage *
+            0.5*(dot(grad(Tic - Taverage), grad(Tic - Taverage)))
+         )
+    ) * dx
+)
+
+# Adding the velocity component
+objective += u_misfit
+
+# Stoping the taping now
+pause_annotation()
+
+# Defining the object for pyadjoint
+reduced_functional = ReducedFunctional(
+    objective,
+    control)
+
+# Set up bounds, which will later be used to
+# enforce boundary conditions in inversion:
+T_lb = Function(W, name="LB_Temperature")
+T_ub = Function(W, name="UB_Temperature")
+T_lb.assign(0.0)
+T_ub.assign(1.0)
+
+Delta_temp = Function(W, name="Delta_Temperature")
+Delta_temp.dat.data[:] = np.random.random(Delta_temp.dat.data.shape)
+minconv = taylor_test(reduced_functional, Tic, Delta_temp)
+# Open file for logging diagnostic output:
+plog = ParameterLog(f'{fi_name}', mesh)
+plog.log_str(minconv)
+plog.close()
