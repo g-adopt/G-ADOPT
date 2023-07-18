@@ -33,6 +33,7 @@ r_660 = rmax - (rmax_earth - r_660_earth)/(rmax_earth - rmin_earth)
 
 fi_name = "params.log"
 
+alpha_T = 0.1
 alpha_d = 0.1
 alpha_s = 0.1
 alpha_u = 0.1
@@ -63,7 +64,7 @@ Ra = Constant(1e7)  # Rayleigh number
 approximation = BoussinesqApproximation(Ra)
 
 # Define time stepping parameters:
-max_timesteps = 200
+max_timesteps = 2
 delta_t = Constant(5e-6)  # Initial time-step
 
 # Without a restart to continue from, our initial guess is the final state of the forward run
@@ -174,7 +175,7 @@ bc_solver = LinearVariationalSolver(bc_problem)
 ic_projection_problem = LinearVariationalProblem(
     q * TrialFunction(Q) * dx,
     q * Tic * dx,
-    energy_solver.solution_old,
+    energy_solver.T_old,
     bcs=energy_solver.strong_bcs,
 )
 ic_projection_solver = LinearVariationalSolver(ic_projection_problem)
@@ -187,11 +188,12 @@ control = Control(Tic)
 T_.assign(Tic)
 bc_solver.solve()
 ic_projection_solver.solve()
-T.assign(energy_solver.solution_old)
+T.assign(energy_solver.T_old)
 
-checkpoint_file = CheckpointFile("Checkpoint_State.h5", "w")
+checkpoint_file = CheckpointFile("Checkpoint_State.h5", "r")
 checkpoint_file.save_mesh(mesh)
-checkpoint_file.save_function(Taverage, name="AverageTemperature", idx=0)
+Taverage = checkpoint_file.load_function(
+    mesh, name="AverageTemperature", idx=0)
 
 # velocity compunent of misfit
 u_misfit = 0.
@@ -227,7 +229,7 @@ with CheckpointFile('Checkpoint_State.h5', mode="r") as f:
         f.load_function(
             mesh,
             "Temperature",
-            idx=max_timesteps))
+            idx=max_timesteps-1))
 
 norm_Tavereage = assemble(
     0.5*(Taverage)**2 * dx)
@@ -274,6 +276,14 @@ Delta_temp = Function(W, name="Delta_Temperature")
 Delta_temp.dat.data[:] = np.random.random(Delta_temp.dat.data.shape)
 minconv = taylor_test(reduced_functional, Tic, Delta_temp)
 # Open file for logging diagnostic output:
-plog = ParameterLog(f'{fi_name}', mesh)
-plog.log_str(minconv)
-plog.close()
+log(
+    (
+        "End of Taylor Test"
+        f"alpha_T: {alpha_T:.5e}"
+        f"alpha_d: {alpha_d:.5e}"
+        f"alpha_s: {alpha_s:.5e}"
+        f"alpha_u: {alpha_u:.5e}"
+        f"alpha_u: {minconv:.8e}\n"
+    )
+)
+
