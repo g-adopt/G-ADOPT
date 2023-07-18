@@ -111,29 +111,12 @@ def taylor_test_all_components(in_dict):
     mu_eff = 2 * (mu_lin * mu_plast)/(mu_lin + mu_plast)
     mu = conditional(mu_eff > 0.4, mu_eff, 0.4)
 
-    # viscosity function
-    mu_function = Function(W, name="Viscosity")
-
     # radial average temperature function
     Taverage = Function(W, name="AverageTemperature")
-
-    # Calculate the layer average of the initial state
-    averager = LayerAveraging(
-        mesh,
-        np.linspace(rmin, rmax, nlayers*2),
-        cartesian=False,
-        quad_degree=6)
 
     # Nullspaces and near-nullspaces:
     Z_nullspace = create_stokes_nullspace(Z, closed=True, rotational=True)
     Z_near_nullspace = create_stokes_nullspace(Z, closed=False, rotational=True, translations=[0, 1])
-
-    # Create output file and select output_frequency:
-    output_file = File("vtk-files/output.pvd")
-    dump_period = 10
-    # Frequency of checkpoint files:
-    checkpoint_period = dump_period * 4
-    # Open file for logging diagnostic output:
 
     temp_bcs = {
         "bottom": {'T': 1.0},
