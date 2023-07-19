@@ -1,6 +1,6 @@
-from gadopt import *
+# from gadopt import *
 import numpy as np
-from firedrake_adjoint import *
+# from firedrake_adjoint import *
 
 newton_stokes_solver_parameters = {
     "snes_type": "newtonls",
@@ -32,13 +32,9 @@ r_410 = rmax - (rmax_earth - r_410_earth)/(rmax_earth - rmin_earth)
 r_660 = rmax - (rmax_earth - r_660_earth)/(rmax_earth - rmin_earth)
 
 
-def taylor_test_all_components(in_dict):
+def taylor_test_all_components(case):
     tape = get_working_tape()
     tape.clear_tape()
-
-    alpha_T, alpha_d, alpha_s, alpha_u = (
-        in_dict.get("alpha_T"), in_dict.get("alpha_d"),
-        in_dict.get("alpha_s"), in_dict.get("alpha_u"))
 
     with CheckpointFile('Checkpoint_State.h5', mode='r') as chckpoint:
         mesh = chckpoint.load_mesh("firedrake_default_extruded")
@@ -78,11 +74,12 @@ def taylor_test_all_components(in_dict):
                 mesh,
                 "Temperature",
                 idx=max_timesteps-1))
-        Taverage = (
-            f.load_function(
-                mesh,
-                "AverageTemperature",
-                idx=0))
+        if case in ["alpha_s", "alpha_d"]:
+            Taverage = (
+                f.load_function(
+                    mesh,
+                    "AverageTemperature",
+                    idx=0))
 
     # building linear depth-dependent viscosity
     mu_lin = 2.0
@@ -173,68 +170,67 @@ def taylor_test_all_components(in_dict):
     ic_projection_solver.solve()
 
     checkpoint_file = CheckpointFile("Checkpoint_State.h5", "r")
-    checkpoint_file.save_mesh(mesh)
-    Taverage = checkpoint_file.load_function(
-        mesh, name="AverageTemperature", idx=0)
+    if case in ["alpha_s", "alpha_d"]:
+        Taverage = checkpoint_file.load_function(
+            mesh, name="AverageTemperature", idx=0)
 
-    # velocity compunent of misfit
-    u_misfit = 0.
+    if case == "alpha_u":
+        # velocity compunent of misfit
+        u_misfit = 0.
 
     # splitting and renaming the functions for visualisation
     u_, p_ = z.split()
     u_.rename("Velocity")
     p_.rename("Pressure")
 
-    # Now perform the time loop:
-    for timestep in range(0, max_timesteps):
-        # Solve Stokes sytem:
-        stokes_solver.solve()
-        # Load the velocity
-        uobs = checkpoint_file.load_function(
-            mesh,
-            name="Velocity",
-            idx=timestep)
+    if case in ["alpha_T", "alpha_u"]:
+        # Now perform the time loop:
+        for timestep in range(0, max_timesteps):
+            # Solve Stokes sytem:
+            stokes_solver.solve()
 
-        # Compute misfit for velocity
-        u_misfit += assemble(0.5 * (uobs - u_)**2 * ds_t)
+            # computing surface misfit if necessary
+            if case == "alpha_u":
+                # Load the velocity
+                uobs = checkpoint_file.load_function(
+                    mesh,
+                    name="Velocity",
+                    idx=timestep)
 
-        # Temperature system:
-        energy_solver.solve()
+                # Compute misfit for velocity
+                u_misfit += assemble(0.5 * (uobs - u_)**2 * ds_t)
+
+            # Temperature system:
+            energy_solver.solve()
 
     checkpoint_file.close()
 
-    with CheckpointFile('Checkpoint_State.h5', mode="r") as f:
-        Tobs = (
-            f.load_function(
-                mesh,
-                "Temperature",
-                idx=max_timesteps-1))
-
-    norm_Tavereage = assemble(
-        0.5*(Taverage)**2 * dx)
-    norm_final_state = assemble(
-        0.5*(Tobs)**2 * dx)
-    norm_grad_Taverage = assemble(
-        0.5*dot(grad(Taverage), grad(Taverage)) * dx)
-    norm_u_surface = assemble(
-        0.5 * (uobs)**2 * ds_t)
-
-    # surface velocity misfit
-    u_misfit = norm_final_state / norm_u_surface * u_misfit / (max_timesteps)
-
-    objective = assemble(
-        (
-            alpha_T * 0.5*(T - Tobs)**2 +
-            alpha_d * norm_final_state / norm_Tavereage * 0.5*(
-                Tic - Taverage)**2 +
-            (alpha_s * norm_final_state / norm_grad_Taverage *
-                0.5*(dot(grad(Tic - Taverage), grad(Tic - Taverage)))
-             )
-        ) * dx(domain=mesh)
-    )
-
-    # Adding the velocity component
-    objective += alpha_u * u_misfit
+    if case == "alpha_d":
+        norm_Tavereage = assemble(
+            0.5*(Taverage)**2 * dx)
+        objective = (
+            0.5*(Tic - Taverage)**2 / norm_Tavereage
+        )
+    elif case == "alpha_s":
+        norm_grad_Taverage = assemble(
+            0.5*dot(grad(Taverage), grad(Taverage)) * dx)
+        objective = (
+            0.5*(dot(grad(Tic - Taverage), grad(Tic - Taverage)))/norm_grad_Taverage
+        )
+    elif case == "alpha_u":
+        norm_u_surface = assemble(
+            0.5 * (uobs)**2 * ds_t)
+        objective = u_misfit / (max_timesteps) / norm_u_surface
+    else:
+        with CheckpointFile('Checkpoint_State.h5', mode="r") as f:
+            Tobs = (
+                f.load_function(
+                    mesh,
+                    "Temperature",
+                    idx=max_timesteps-1))
+            norm_final_state = assemble(
+                0.5*(Tobs)**2 * dx)
+        objective = 0.5*(T - Tobs)**2 / norm_final_state
 
     # Stoping the taping now
     pause_annotation()
@@ -252,25 +248,12 @@ def taylor_test_all_components(in_dict):
     log(
         (
             "End of Taylor Test ****: "
-            f"alpha_T: {alpha_T:.2e}, "
-            f"alpha_d: {alpha_d:.2e}, "
-            f"alpha_s: {alpha_s:.2e}, "
-            f"alpha_u: {alpha_u:.2e}, "
+            f"case: {case}, "
             f"conversion: {minconv:.8e}\n"
         )
     )
 
 
 if __name__ == "__main__":
-    for prm in ["alpha_u", "alpha_s"]:
-        prm_dictionary = {
-            "alpha_T": 0.0,
-            "alpha_u": 0.0,
-            "alpha_d": 0.0,
-            "alpha_s": 0.0
-        }
-        prm_dictionary[prm] = 1.0
-        try:
-            taylor_test_all_components(prm_dictionary)
-        except Exception:
-            print("Failure", prm_dictionary)
+    for prm in ["alpha_u", "alpha_s", "alpha_T", "alpha_d"]:
+        taylor_test_all_components(case=prm)
