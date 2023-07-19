@@ -32,7 +32,15 @@ r_410 = rmax - (rmax_earth - r_410_earth)/(rmax_earth - rmin_earth)
 r_660 = rmax - (rmax_earth - r_660_earth)/(rmax_earth - rmin_earth)
 
 
-def taylor_test_all_components(case):
+def main():
+    for case in ["damping", "smoothing", "Tobs", "uobs"]:
+        try:
+            all_taylor_tests(case)
+        except Exception:
+            raise Exception(f"Taylor test for case {case} failed!")
+
+
+def all_taylor_tests(case):
     tape = get_working_tape()
     tape.clear_tape()
 
@@ -43,11 +51,12 @@ def taylor_test_all_components(case):
     V = VectorFunctionSpace(mesh, "CG", 2)  # Velocity function space (vector)
     W = FunctionSpace(mesh, "CG", 1)  # Pressure function space (scalar)
     Q = FunctionSpace(mesh, "CG", 2)  # Temperature function space (scalar)
+    Q1 = FunctionSpace(mesh, "CG", 1)  # Temperature function space (scalar)
     Z = MixedFunctionSpace([V, W])  # Mixed function space.
 
     # Test functions
     q = TestFunction(Q)
-    w = TestFunction(W)
+    q1 = TestFunction(Q1)
 
     # Test functions and functions to hold solutions:
     z = Function(Z)  # a field over the mixed function space Z.
@@ -67,30 +76,30 @@ def taylor_test_all_components(case):
 
     # Without a restart to continue from, our initial guess is the final state of the forward run
     # We need to project the state from Q2 into Q1
-    Tic = Function(W, name="Initial Temperature")
-    # radial average temperature function
-    Taverage = Function(W, name="AverageTemperature")
+    Tic = Function(Q1, name="Initial Temperature")
 
-    # Control variable for optimisation
-    control = Control(Tic)
+    # radial average temperature function
+    Taverage = Function(Q1, name="AverageTemperature")
 
     with CheckpointFile("Checkpoint_State.h5", "r") as f:
-        Tic.project(
+        T_ic_initial_guess = (
             f.load_function(
                 mesh,
                 "Temperature",
                 idx=max_timesteps-1))
-        if case in ["alpha_s", "alpha_d"]:
-            Taverage = (
-                f.load_function(
-                    mesh,
-                    "AverageTemperature",
-                    idx=0))
+        Taverage.interpolate(
+            f.load_function(
+                mesh,
+                "AverageTemperature",
+                idx=0))
+
+    Tic.project(T_ic_initial_guess)
 
     # building linear depth-dependent viscosity
     mu_lin = 2.0
 
     # A step function designed to design viscosity jumps
+
     def step_func(center, mag, increasing=True, sharpness=50):
         """ r: Earth's radius, center:center of jump,
             increasing: if True jump happens with increasing r
@@ -130,8 +139,8 @@ def taylor_test_all_components(case):
         "top": {'un': 0},
     }
     temp_bcs_q1 = [
-        DirichletBC(W, 0.0, "top"),
-        DirichletBC(W, 1.0, "bottom"),
+        DirichletBC(Q1, 0.0, "top"),
+        DirichletBC(Q1, 1.0, "bottom"),
     ]
 
     energy_solver = EnergySolver(T, u, approximation, delta_t, ImplicitMidpoint, bcs=temp_bcs)
@@ -145,10 +154,11 @@ def taylor_test_all_components(case):
         solver_parameters=newton_stokes_solver_parameters)
 
     # Define a simple problem to apply the imposed boundary condition to the IC
+
     T_ = Function(Tic.function_space())
     bc_problem = LinearVariationalProblem(
-        w * TrialFunction(W) * dx,
-        w * T_ * dx,
+        q1 * TrialFunction(Q1) * dx,
+        q1 * T_ * dx,
         Tic,
         bcs=temp_bcs_q1,
     )
@@ -163,6 +173,9 @@ def taylor_test_all_components(case):
     )
     ic_projection_solver = LinearVariationalSolver(ic_projection_problem)
 
+    # Control variable for optimisation
+    control = Control(Tic)
+
     # Apply the boundary condition to the control
     # and obtain the initial condition
     T_.assign(Tic)
@@ -171,86 +184,77 @@ def taylor_test_all_components(case):
 
     checkpoint_file = CheckpointFile("Checkpoint_State.h5", "r")
 
-    if case == "alpha_u":
-        # velocity compunent of misfit
-        u_misfit = 0.
+    # velocity compunent of misfit
+    u_misfit = 0.
 
     # splitting and renaming the functions for visualisation
     u_, p_ = z.split()
     u_.rename("Velocity")
     p_.rename("Pressure")
 
-    if case in ["alpha_T", "alpha_u"]:
-        # Now perform the time loop:
-        for timestep in range(0, max_timesteps):
-            # Solve Stokes sytem:
-            stokes_solver.solve()
+    # Now perform the time loop:
+    for timestep in range(0, max_timesteps):
+        # Solve Stokes sytem:
+        stokes_solver.solve()
 
-            # computing surface misfit if necessary
-            if case == "alpha_u":
-                # Load the velocity
-                uobs = checkpoint_file.load_function(
-                    mesh,
-                    name="Velocity",
-                    idx=timestep)
+        # computing surface misfit if necessary
+        # Load the velocity
+        uobs = checkpoint_file.load_function(
+            mesh,
+            name="Velocity",
+            idx=timestep)
 
-                # Compute misfit for velocity
-                u_misfit += assemble(0.5 * (uobs - u_)**2 * ds_t)
+        # Compute misfit for velocity
+        u_misfit += assemble(0.5 * (uobs - u_)**2 * ds_t)
 
-            # Temperature system:
-            energy_solver.solve()
+        # Temperature system:
+        energy_solver.solve()
 
     checkpoint_file.close()
 
-    if case == "alpha_d":
-        norm_Tavereage = assemble(
-            0.5*(Taverage)**2 * dx)
-        objective = (
-            0.5*(Tic - Taverage)**2 / norm_Tavereage
-        )
-    elif case == "alpha_s":
-        norm_grad_Taverage = assemble(
-            0.5*dot(grad(Taverage), grad(Taverage)) * dx)
-        objective = (
-            0.5*(dot(grad(Tic - Taverage), grad(Tic - Taverage)))/norm_grad_Taverage
-        )
-    elif case == "alpha_u":
-        norm_u_surface = assemble(
-            0.5 * (uobs)**2 * ds_t)
-        objective = u_misfit / (max_timesteps) / norm_u_surface
-    else:
-        with CheckpointFile('Checkpoint_State.h5', mode="r") as f:
-            Tobs = (
-                f.load_function(
-                    mesh,
-                    "Temperature",
-                    idx=max_timesteps-1))
-            norm_final_state = assemble(
-                0.5*(Tobs)**2 * dx)
-        objective = 0.5*(T - Tobs)**2 / norm_final_state
+    with CheckpointFile('Checkpoint_State.h5', mode="r") as f:
+        Tobs = (
+            f.load_function(
+                mesh,
+                "Temperature",
+                idx=max_timesteps-1))
 
-    # Stoping the taping now
-    pause_annotation()
+    norm_Tavereage = assemble(
+        0.5*(Taverage)**2 * dx)
+    norm_grad_Taverage = assemble(
+        0.5*dot(grad(Taverage), grad(Taverage)) * dx)
+    norm_u_surface = assemble(
+        0.5 * (uobs)**2 * ds_t)
+    norm_final_state = assemble(
+        0.5*(Tobs)**2 * dx)
+
+    if case == "smoothing":
+        objective = 0.5 * assemble(dot(grad(Tic-Taverage), grad(Tic-Taverage)) * dx) / norm_grad_Taverage
+    elif case == "damping":
+        objective = 0.5 * assemble((Tic - Taverage)**2 * dx) / norm_Tavereage
+    elif case == "Tobs":
+        objective = 0.5 * assemble((T - Tobs)**2 * dx) / norm_final_state
+    else:
+        objective = u_misfit / (max_timesteps) / norm_u_surface
 
     # Defining the object for pyadjoint
     reduced_functional = ReducedFunctional(
         objective,
         control)
 
-    Delta_temp = Function(W, name="Delta_Temperature")
+    Delta_temp = Function(Tic.function_space(), name="Delta_Temperature")
     Delta_temp.dat.data[:] = np.random.random(Delta_temp.dat.data.shape)
     minconv = taylor_test(reduced_functional, Tic, Delta_temp)
 
     # Open file for logging diagnostic output:
     log(
         (
-            "End of Taylor Test ****: "
-            f"case: {case}, "
-            f"conversion: {minconv:.8e}\n"
+            "\n\nEnd of Taylor Test ****: "
+            f"case: {case}"
+            f"conversion: {minconv:.8e}\n\n\n"
         )
     )
 
 
 if __name__ == "__main__":
-    for prm in ["alpha_u", "alpha_s", "alpha_T", "alpha_d"]:
-        taylor_test_all_components(case=prm)
+    main()
