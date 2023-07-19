@@ -1,6 +1,6 @@
-# from gadopt import *
+from gadopt import *
 import numpy as np
-# from firedrake_adjoint import *
+from firedrake_adjoint import *
 
 newton_stokes_solver_parameters = {
     "snes_type": "newtonls",
@@ -68,6 +68,12 @@ def taylor_test_all_components(case):
     # Without a restart to continue from, our initial guess is the final state of the forward run
     # We need to project the state from Q2 into Q1
     Tic = Function(W, name="Initial Temperature")
+    # radial average temperature function
+    Taverage = Function(W, name="AverageTemperature")
+
+    # Control variable for optimisation
+    control = Control(Tic)
+
     with CheckpointFile("Checkpoint_State.h5", "r") as f:
         Tic.project(
             f.load_function(
@@ -110,9 +116,6 @@ def taylor_test_all_components(case):
     mu_plast = 0.1 + (sigma_y / epsii)
     mu_eff = 2 * (mu_lin * mu_plast)/(mu_lin + mu_plast)
     mu = conditional(mu_eff > 0.4, mu_eff, 0.4)
-
-    # radial average temperature function
-    Taverage = Function(W, name="AverageTemperature")
 
     # Nullspaces and near-nullspaces:
     Z_nullspace = create_stokes_nullspace(Z, closed=True, rotational=True)
@@ -160,9 +163,6 @@ def taylor_test_all_components(case):
     )
     ic_projection_solver = LinearVariationalSolver(ic_projection_problem)
 
-    # Control variable for optimisation
-    control = Control(Tic)
-
     # Apply the boundary condition to the control
     # and obtain the initial condition
     T_.assign(Tic)
@@ -170,9 +170,6 @@ def taylor_test_all_components(case):
     ic_projection_solver.solve()
 
     checkpoint_file = CheckpointFile("Checkpoint_State.h5", "r")
-    if case in ["alpha_s", "alpha_d"]:
-        Taverage = checkpoint_file.load_function(
-            mesh, name="AverageTemperature", idx=0)
 
     if case == "alpha_u":
         # velocity compunent of misfit
