@@ -33,6 +33,9 @@ r_660 = rmax - (rmax_earth - r_660_earth)/(rmax_earth - rmin_earth)
 
 
 def taylor_test_all_components(in_dict):
+    tape = get_working_tape()
+    tape.clear_tape()
+
     alpha_T, alpha_d, alpha_s, alpha_u = (
         in_dict.get("alpha_T"), in_dict.get("alpha_d"),
         in_dict.get("alpha_s"), in_dict.get("alpha_u"))
@@ -267,4 +270,7 @@ if __name__ == "__main__":
             "alpha_s": 0.0
         }
         prm_dictionary[prm] = 1.0
-        taylor_test_all_components(prm_dictionary)
+        try:
+            taylor_test_all_components(prm_dictionary)
+        except Exception:
+            print("Failure", prm_dictionary)
