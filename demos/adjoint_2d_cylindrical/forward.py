@@ -38,6 +38,7 @@ with CheckpointFile('Checkpoint230.h5', mode='r') as chckpoint:
 V = VectorFunctionSpace(mesh, "CG", 2)  # Velocity function space (vector)
 W = FunctionSpace(mesh, "CG", 1)  # Pressure function space (scalar)
 Q = FunctionSpace(mesh, "CG", 2)  # Temperature function space (scalar)
+Q1 = FunctionSpace(mesh, "CG", 1)  # Temperature average (scalar)
 Z = MixedFunctionSpace([V, W])  # Mixed function space.
 
 # Test functions and functions to hold solutions:
@@ -77,7 +78,7 @@ for line, step in zip(
     mu_lin += line*step
 
 # adding the temperature dependence of visc
-mu_lin *= exp(- ln(Constant(80)) * (T))
+mu_lin *= exp(-ln(Constant(80)) * (T))
 
 # viscosity expression in terms of u and p
 eps = sym(grad(u))
@@ -91,7 +92,7 @@ mu = conditional(mu_eff > 0.4, mu_eff, 0.4)
 mu_function = Function(W, name="Viscosity")
 
 # radial average temperature function
-Taverage = Function(W, name="AverageTemperature")
+Taverage = Function(Q1, name="AverageTemperature")
 
 # Calculate the layer average of the initial state
 averager = LayerAveraging(
@@ -105,7 +106,7 @@ Z_nullspace = create_stokes_nullspace(Z, closed=True, rotational=True)
 Z_near_nullspace = create_stokes_nullspace(Z, closed=False, rotational=True, translations=[0, 1])
 
 # Create output file and select output_frequency:
-output_file = File("vtk-files/output.pvd")
+output_file = File("vtu-files/output.pvd")
 dump_period = 10
 # Frequency of checkpoint files:
 checkpoint_period = dump_period * 4
@@ -149,14 +150,14 @@ p_.rename("Pressure")
 # Now perform the time loop:
 for timestep in range(0, max_timesteps):
 
+    # Solve Stokes sytem:
+    stokes_solver.solve()
+
     # Write output:
     if (timestep % dump_period == 0 or
             timestep == max_timesteps - 1):
         mu_function.interpolate(mu)
-        output_file.write(u_, p_, T)
-
-    # Solve Stokes sytem:
-    stokes_solver.solve()
+        output_file.write(u_, p_, T, mu_function)
 
     # store velocity for return
     checkpoint_file.save_function(u_, name="Velocity", idx=timestep)
