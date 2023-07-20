@@ -1,5 +1,4 @@
 from gadopt import *
-import numpy as np
 from firedrake_adjoint import *
 
 newton_stokes_solver_parameters = {
@@ -33,15 +32,14 @@ r_660 = rmax - (rmax_earth - r_660_earth)/(rmax_earth - rmin_earth)
 
 
 def main():
-    # for case in ["damping", "smoothing", "Tobs", "uobs"]:
-    for case in ["uobs"]:
+    for case in ["damping", "smoothing", "Tobs", "uobs"]:
         try:
-            all_taylor_tests(case)
+            visualise_derivative(case)
         except Exception:
-            raise Exception(f"Taylor test for case {case} failed!")
+            raise Exception(f"derivative visualisation for {case} failed!")
 
 
-def all_taylor_tests(case):
+def visualise_derivative(case):
     tape = get_working_tape()
     tape.clear_tape()
 
@@ -193,6 +191,7 @@ def all_taylor_tests(case):
     u_, p_ = z.split()
     u_.rename("Velocity")
     p_.rename("Pressure")
+
     # If it is only for smoothing or damping, there is no need to do the time-steping
     initial_timestep = 0 if case in ["Tobs", "uobs"] else max_timesteps
 
@@ -248,18 +247,15 @@ def all_taylor_tests(case):
         objective,
         control)
 
-    Delta_temp = Function(Tic.function_space(), name="Delta_Temperature")
-    Delta_temp.dat.data[:] = np.random.random(Delta_temp.dat.data.shape)
-    minconv = taylor_test(reduced_functional, Tic, Delta_temp)
+    # derivative function
+    der_function = reduced_functional.derivative(
+        options={'riesz_representation': 'L2'})
 
-    # Open file for logging diagnostic output:
-    log(
-        (
-            "\n\nEnd of Taylor Test ****: "
-            f"case: {case}"
-            f"conversion: {minconv:.8e}\n\n\n"
-        )
-    )
+    # derivative file
+    der_file = File(f"derivative_{case}/derivative.pvd")
+    der_file.write(
+        der_function)
+
     # This is to make sure we are annotating
     continue_annotation()
 
