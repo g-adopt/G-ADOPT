@@ -91,13 +91,10 @@ energy_solver = EnergySolver(
     ImplicitMidpoint,
     bcs=temp_bcs
 )
-Told = energy_solver.T_old
-Ttheta = 0.5*T + 0.5*Told
-Told.assign(T)
 
 stokes_solver = StokesSolver(
     z,
-    Ttheta,
+    T,
     approximation,
     bcs=stokes_bcs,
     nullspace=Z_nullspace,
