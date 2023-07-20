@@ -252,7 +252,6 @@ def all_taylor_tests(case):
     Delta_temp.dat.data[:] = np.random.random(Delta_temp.dat.data.shape)
     minconv = taylor_test(reduced_functional, Tic, Delta_temp)
 
-    # Open file for logging diagnostic output:
     log(
         (
             "\n\nEnd of Taylor Test ****: "
@@ -262,6 +261,8 @@ def all_taylor_tests(case):
     )
     # This is to make sure we are annotating
     continue_annotation()
+
+    assert minconv > 1.9
 
 
 if __name__ == "__main__":

@@ -1,127 +1,136 @@
 from gadopt import *
 import numpy as np
 
-dx = dx(degree=6)
-
-# Thermal boundary layer thickness
-thickness_val = 3
-
 x_max = 1.0
 y_max = 1.0
-
-# Number of intervals along x direction
 disc_n = 150
-depth_profile = np.linspace(0, y_max, disc_n*2)
 
-# Interval mesh in x direction, to be extruded along y
-mesh1d = IntervalMesh(disc_n, length_or_left=0.0, right=x_max)
-mesh = ExtrudedMesh(
-    mesh1d,
-    layers=disc_n,
-    layer_height=y_max / disc_n,
-    extrusion_type="uniform"
-)
 
-with CheckpointFile("mesh.h5", "w") as f:
-    f.save_mesh(mesh)
+def main():
+    forward_run()
 
-bottom_id, top_id = "bottom", "top"
-left_id, right_id = 1, 2
 
-domain_volume = assemble(1*dx(domain=mesh))
+def forward_run():
+    # generate a mesh that should be used in this example
+    generate_mesh()
 
-# Set up function spaces for the Q2Q1 pair
-V = VectorFunctionSpace(mesh, "CG", 2)  # Velocity function space (vector)
-W = FunctionSpace(mesh, "CG", 1)  # Pressure function space (scalar)
-Q = FunctionSpace(mesh, "CG", 2)  # Temperature function space (scalar)
-Q1 = FunctionSpace(mesh, "CG", 1)  # Average temperature function space (scalar, P1)
-Z = MixedFunctionSpace([V, W])
+    # load the mesh
+    with CheckpointFile("mesh.h5", "r") as f:
+        mesh = f.load_mesh("firedrake_default_extruded")
 
-z = Function(Z)  # A field over the mixed function space Z
-u, p = z.subfunctions  # Symbolic UFL expressions for u and p
-u.rename("Velocity")
-p.rename("Pressure")
+    bottom_id, top_id = "bottom", "top"
+    left_id, right_id = 1, 2
 
-T = Function(Q, name="Temperature")
-X = SpatialCoordinate(mesh)
-T.interpolate(
-    0.5 * (erf((1 - X[1]) * thickness_val) + erf(-X[1] * thickness_val) + 1) +
-    0.1 * exp(-0.5 * ((X - as_vector((0.5, 0.2))) / Constant(0.1)) ** 2)
-)
+    # Set up function spaces for the Q2Q1 pair
+    V = VectorFunctionSpace(mesh, "CG", 2)  # Velocity function space (vector)
+    W = FunctionSpace(mesh, "CG", 1)  # Pressure function space (scalar)
+    Q = FunctionSpace(mesh, "CG", 2)  # Temperature function space (scalar)
+    Q1 = FunctionSpace(mesh, "CG", 1)  # Average temperature function space (scalar, P1)
+    Z = MixedFunctionSpace([V, W])
 
-T_average = Function(Q1, name="Average Temperature")
+    z = Function(Z)  # A field over the mixed function space Z
+    u_, p_ = z.subfunctions  # Symbolic UFL expressions for u and p
+    u_.rename("Velocity")
+    p_.rename("Pressure")
 
-# Calculate the layer average of the initial state
-averager = LayerAveraging(mesh, depth_profile, cartesian=True, quad_degree=6)
-averager.extrapolate_layer_average(
-    T_average,
-    averager.get_layer_average(T)
-)
+    T = Function(Q, name="Temperature")
+    X = SpatialCoordinate(mesh)
+    T.interpolate(
+        0.5 * (erf((1 - X[1]) * 3.0) + erf(-X[1] * 3.0) + 1) +
+        0.1 * exp(-0.5 * ((X - as_vector((0.5, 0.2))) / Constant(0.1)) ** 2)
+    )
 
-with CheckpointFile("initial_state.h5", "w") as f:
-    f.save_mesh(mesh)
-    f.save_function(T_average)
+    T_average = Function(Q1, name="Average Temperature")
 
-Ra = Constant(1e6)
-approximation = BoussinesqApproximation(Ra)
+    # Calculate the layer average of the initial state
+    averager = LayerAveraging(
+        mesh,
+        np.linspace(0, y_max, disc_n*2),
+        cartesian=True, quad_degree=6)
+    averager.extrapolate_layer_average(
+        T_average,
+        averager.get_layer_average(T)
+    )
 
-delta_t = Constant(4e-6)  # Constant time step
-max_timesteps = 80
-time = 0.0
+    checkpoint_file = CheckpointFile("Checkpoint_State.h5", "w")
+    checkpoint_file.save_mesh(mesh)
+    checkpoint_file.save_function(T_average, name="AverageTemperature", idx=0)
 
-Z_nullspace = create_stokes_nullspace(Z, closed=True, rotational=False)
+    Ra = Constant(1e6)
+    approximation = BoussinesqApproximation(Ra)
 
-# Free-slip velocity boundary condition on all sides
-stokes_bcs = {
-    bottom_id: {"uy": 0},
-    top_id: {"uy": 0},
-    left_id: {"ux": 0},
-    right_id: {"ux": 0},
-}
-temp_bcs = {
-    top_id: {"T": 0.0},
-    bottom_id: {"T": 1.0},
-}
+    delta_t = Constant(4e-6)  # Constant time step
+    max_timesteps = 80
+    time = 0.0
 
-energy_solver = EnergySolver(
-    T,
-    u,
-    approximation,
-    delta_t,
-    ImplicitMidpoint,
-    bcs=temp_bcs
-)
+    Z_nullspace = create_stokes_nullspace(Z, closed=True, rotational=False)
 
-stokes_solver = StokesSolver(
-    z,
-    T,
-    approximation,
-    bcs=stokes_bcs,
-    nullspace=Z_nullspace,
-    transpose_nullspace=Z_nullspace
-)
+    # Free-slip velocity boundary condition on all sides
+    stokes_bcs = {
+        bottom_id: {"uy": 0},
+        top_id: {"uy": 0},
+        left_id: {"ux": 0},
+        right_id: {"ux": 0},
+    }
+    temp_bcs = {
+        top_id: {"T": 0.0},
+        bottom_id: {"T": 1.0},
+    }
 
-output_file = File("visualisation/output_forward.pvd")
-dump_period = 10
+    energy_solver = EnergySolver(
+        T,
+        u,
+        approximation,
+        delta_t,
+        ImplicitMidpoint,
+        bcs=temp_bcs
+    )
 
-u_checkpoint = CheckpointFile("reference_velocity.h5", "w")
-u_checkpoint.save_mesh(mesh)
+    stokes_solver = StokesSolver(
+        z,
+        T,
+        approximation,
+        bcs=stokes_bcs,
+        nullspace=Z_nullspace,
+        transpose_nullspace=Z_nullspace
+    )
 
-for timestep in range(0, max_timesteps):
-    stokes_solver.solve()
-    energy_solver.solve()
-    time += float(delta_t)
+    output_file = File("vtu-files/output.pvd")
+    dump_period = 10
 
-    average_temperature = assemble(T * dx) / domain_volume
-    log(f"{timestep} {time:.02e} {average_temperature:.1e}")
+    for timestep in range(0, max_timesteps):
+        stokes_solver.solve()
+        energy_solver.solve()
+        time += float(delta_t)
 
-    u_checkpoint.save_function(u, idx=timestep)
+        # Storing velocity to be used in the objective F
+        checkpoint_file.save_function(u, name="Velocity", idx=timestep)
 
-    if timestep % dump_period == 0 or timestep == max_timesteps-1:
-        output_file.write(u, p, T)
+        if timestep % dump_period == 0 or timestep == max_timesteps-1:
+            output_file.write(u, p, T)
 
-u_checkpoint.close()
+        if timestep == max_timesteps - 1:
+            checkpoint_file.save_function(T, name="Temperature", idx=timestep)
 
-with CheckpointFile("final_state.h5", "w") as f:
-    f.save_mesh(mesh)
-    f.save_function(T)
+    checkpoint_file.close()
+
+
+def generate_mesh():
+    # domain properties
+
+    # Interval mesh in x direction, to be extruded along y
+    mesh1d = IntervalMesh(disc_n, length_or_left=0.0, right=x_max)
+    mesh = ExtrudedMesh(
+        mesh1d,
+        layers=disc_n,
+        layer_height=y_max / disc_n,
+        extrusion_type="uniform"
+    )
+
+    # Write out the reference mesh
+    with CheckpointFile("mesh.h5", "w") as f:
+        f.save_mesh(mesh)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,18 +1,15 @@
 from gadopt import *
 from firedrake_adjoint import *
-import numpy as np
 
 
 def main():
-    # for case in ["damping", "smoothing", "Tobs", "uobs"]:
-    for case in ["uobs"]:
+    for case in ["damping", "smoothing", "Tobs", "uobs"]:
         try:
-            all_taylor_tests(case)
+            visualise_derivative(case)
         except Exception:
-            raise Exception(f"Taylor test for case {case} failed!")
+            raise Exception(f"derivative visualisation for {case} failed!")
 
-
-def all_taylor_tests(case):
+def visualise_derivative(case):
 
     # Make sure we start from a clean tape
     tape = get_working_tape()
@@ -149,7 +146,6 @@ def all_taylor_tests(case):
     Taverage.rename("AverageTemperature")
 
     checkpoint_file.close()
-
     if case == "smoothing":
         norm_grad_Taverage = assemble(
             0.5*dot(grad(Taverage), grad(Taverage)) * dx)
@@ -172,23 +168,17 @@ def all_taylor_tests(case):
 
     reduced_functional = ReducedFunctional(objective, control)
 
-    delta_T = Function(Q1, name="Delta Temperature")
-    delta_T.dat.data[:] = np.random.random(delta_T.dat.data.shape)
-    minconv = taylor_test(reduced_functional, Tic, delta_T)
+    # derivative function
+    der_function = reduced_functional.derivative(
+        options={'riesz_representation': 'L2'})
 
-    log(
-        (
-            "\n\nEnd of Taylor Test ****: "
-            f"case: {case}"
-            f"conversion: {minconv:.8e}\n\n\n"
-        )
-    )
+    # derivative file
+    der_file = File(f"derivative_{case}/derivative.pvd")
+    der_file.write(
+        der_function)
 
     # make sure we keep annotating after this
     continue_annotation()
-
-    # Making sure test results are satisfied
-    assert minconv > 1.9
 
 
 if __name__ == "__main__":
