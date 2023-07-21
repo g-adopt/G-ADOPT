@@ -1,13 +1,11 @@
 from gadopt import *
 from firedrake_adjoint import *
-import numpy as np
 from os import mkdir
 from os.path import isdir
-from pyadjoint.tape import no_annotations
 
 
 def main():
-    inverse(1.0, 1.0, 1.0)
+    inverse(alpha_u=1.0, alpha_d=1.0, alpha_s=1.0)
 
 
 def inverse(alpha_u, alpha_d, alpha_s):
@@ -19,6 +17,9 @@ def inverse(alpha_u, alpha_d, alpha_s):
     with CheckpointFile("mesh.h5", "r") as f:
         mesh = f.load_mesh("firedrake_default_extruded")
 
+    # Enable checkpointing
+    enable_disk_checkpointing()
+
     bottom_id, top_id = "bottom", "top"
     left_id, right_id = 1, 2
 
@@ -26,7 +27,7 @@ def inverse(alpha_u, alpha_d, alpha_s):
     V = VectorFunctionSpace(mesh, "CG", 2)  # Velocity function space (vector)
     W = FunctionSpace(mesh, "CG", 1)  # Pressure function space (scalar)
     Q = FunctionSpace(mesh, "CG", 2)  # Temperature function space (scalar)
-    Q1 = FunctionSpace(mesh, "CG", 1)  # Average temperature function space (scalar, P1)
+    Q1 = FunctionSpace(mesh, "CG", 1)  # control space (scalar, P1)
     Z = MixedFunctionSpace([V, W])
 
     q = TestFunction(Q)
@@ -136,11 +137,17 @@ def inverse(alpha_u, alpha_d, alpha_s):
             name="Velocity",
             idx=timestep)
         u_misfit += assemble(0.5 * (uobs - u)**2 * ds_t)
+
         energy_solver.solve()
 
     # Load the observed final state
     Tobs = checkpoint_file.load_function(mesh, "Temperature", idx=max_timesteps - 1)
     Tobs.rename("ObservedTemperature")
+
+    # Load the reference initial state
+    # Needed to measure performance of weightings
+    Tic_obs = checkpoint_file.load_function(mesh, "Temperature", idx=0)
+    Tic_obs.rename("ReferenceInitialTemperature")
 
     # Load the average temperature profile
     Taverage = checkpoint_file.load_function(mesh, "AverageTemperature", idx=0)
@@ -162,11 +169,11 @@ def inverse(alpha_u, alpha_d, alpha_s):
         0.5 * (uobs)**2 * ds_t)
 
     objective = (
-        0.5 * norm_final_state * assemble(
-            dot(grad(Tic-Taverage), grad(Tic-Taverage)) * dx) / norm_grad_Taverage +
-        norm_final_state * u_misfit / max_timesteps / norm_u_surface +
-        0.5 * assemble((T - Tobs)**2 * dx) +
-        0.5 * norm_final_state * assemble((Tic - Taverage)**2 * dx) / norm_Tavereage
+        assemble(0.5 * (T - Tobs)**2 * dx) +
+        alpha_u * norm_final_state * u_misfit / max_timesteps / norm_u_surface +
+        alpha_s * norm_final_state * assemble(
+            0.5 * dot(grad(Tic-Taverage), grad(Tic-Taverage)) * dx) / norm_grad_Taverage +
+        alpha_d * norm_final_state * assemble(0.5 * (Tic - Taverage)**2 * dx) / norm_Tavereage
     )
 
     # All done with the forward run, stop annotating anything else to the tape
@@ -175,7 +182,6 @@ def inverse(alpha_u, alpha_d, alpha_s):
     reduced_functional = ReducedFunctional(objective, control)
 
     class ROL_callback(object):
-        @no_annotations
         def __init__(self):
             # keeping track of iteration number
             # self.iteration = my_restarter.iteration
@@ -187,7 +193,6 @@ def inverse(alpha_u, alpha_d, alpha_s):
 
             mesh.comm.barrier()
 
-        @no_annotations
         def __call__(self):
             # first checkpoint the optimisation for rerun
             log("\tFinal misfit: {}".format(
@@ -195,10 +200,10 @@ def inverse(alpha_u, alpha_d, alpha_s):
                     (T.block_variable.checkpoint.restore() -
                      Tobs)**2 * dx)))
 
-            # log("\tInitial misfit : {}".format(
-            #     assemble(
-            #         (Tic.block_variable.checkpoint.restore() -
-            #          ref_Tic)**2 * dx)))
+            log("\tInitial misfit : {}".format(
+                assemble(
+                    (Tic.block_variable.checkpoint.restore() -
+                     Tic_obs)**2 * dx)))
 
             fin_function = Function(
                 Q, name='RecFin').assign(
