@@ -38,7 +38,7 @@ r = sqrt(X[0]**2 + X[1]**2)
 T.interpolate(rmax - r + 0.02*cos(4*atan2(X[1], X[0])) * sin((r - rmin) * pi))
 
 dynamic_topography = Function(W, name="DynamicTopography")
-interioir_bc = InteriorBC(dynamic_topography.function_space(), 0.0, "top")
+interior_bc = InteriorBC(dynamic_topography.function_space(), 0.0, "top")
 
 Ra = Constant(1e5)  # Rayleigh number
 approximation = BoussinesqApproximation(Ra)
@@ -95,10 +95,10 @@ for timestep in range(0, max_timesteps):
     # Write output:
     if timestep % dump_period == 0:
         # calculation of dynamic topography
-        dynamic_topography.project(stokes_solver.force_on_surface(stokes_solver.k))
+        dynamic_topography.project(stokes_solver.compute_force_on_surface(stokes_solver.k))
         ave = assemble(dynamic_topography * ds_t) / assemble(1 * ds_t(mesh))
         dynamic_topography.assign(dynamic_topography - Constant(ave))
-        interioir_bc.apply(dynamic_topography)
+        interior_bc.apply(dynamic_topography)
         output_file.write(u, p, T, dynamic_topography)
 
     if timestep != 0:
