@@ -12,7 +12,7 @@ import firedrake as fd
 
 from .approximations import BaseApproximation
 from .momentum_equation import StokesEquations
-from .utility import DEBUG, INFO, depends_on, ensure_constant, log_level, upward_normal
+from .utility import DEBUG, INFO, depends_on, ensure_constant, log_level, upward_normal, InteriorBC
 
 iterative_stokes_solver_parameters = {
     "mat_type": "matfree",
@@ -314,3 +314,121 @@ class StokesSolver:
             self.setup_solver()
         self.solution_old = self.solution.copy(deepcopy=True)
         self.solver.solve()
+
+
+class BoundaryNormalStressSolver:
+    """ A class for calculating surface forces acting on boundary
+
+    Args:
+        stokes_solver: gadopt StokesSolver, which provides
+            the necessary fields for calculating stress
+        subdomain_id: str | int, the subdomain id of a physical boundary
+        solver_parameters: Optional, dictionary of parameters for the
+            the simple variational problem
+    """
+    # Direct solve parameters for dynamic topography
+    direct_solve_parameters = {
+        "mat_type": "aij",
+        "ksp_type": "preonly",
+        "pc_type": "lu",
+        "pc_factor_mat_solver_type": "mumps",
+    }
+    # Iterative solve parameters
+    iterative_solver_parameters = {
+        "mat_type": "aij",
+        "snes_type": "ksponly",
+        "ksp_type": "gmres",
+        "ksp_rtol": 1e-5,
+        "pc_type": "sor",
+    }
+
+    def __init__(self,
+                 stokes_solver: StokesSolver,
+                 subdomain_id: int | str,
+                 solver_parameters: Optional[dict[str, str | Number]] = None):
+
+        # pressure and velocity together with viscosity are needed
+        self.u, self.p, *self.eta = stokes_solver.solution.subfunctions
+        self.mu = stokes_solver.mu
+
+        # geometry
+        self.mesh = stokes_solver.mesh
+        self.dim = self.mesh.geometric_dimension()
+
+        # approximation tells us if we need to consider compressible formulation or not
+        self.approximation = stokes_solver.approximation
+
+        # physical boundary id
+        self.subdomain_id = subdomain_id
+
+        # setting solver parameters
+        if solver_parameters is None:
+            if self.dim == 3:
+                self.solver_parameters = BoundaryNormalStressSolver.iterative_solver_parameters
+            else:
+                self.solver_parameters = BoundaryNormalStressSolver.direct_solve_parameters
+        else:
+            self.solver_parameters = solver_parameters
+
+        # when to know the solver
+        self._solver_is_made = False
+
+    def solve(self):        # Solve a linear system
+        if not self._solver_is_made:
+            self.setup_solver()
+
+        # solve for the source
+        self.solver.solve()
+
+        # take the average out
+        vave = fd.assemble(self.force * self.ds)
+        self.force.assign(self.force - vave)
+
+        # re-apply the zero condition everywhere except for the
+        self.interior_null_bc.apply(self.force)
+
+        return self.force
+
+    def setup_solver(self):
+
+        # Since p will be alway in lower dimensions than u
+        # it makes sense to define the solution in the lower dimension
+        # as dynamic topography uses p
+        Q = fd.FunctionSpace(self.mesh, self.p.ufl_element())
+
+        self.force = fd.Function(Q, name=f"force_{self.subdomain_id}")
+
+        # normal vector
+        n = fd.FacetNormal(self.mesh)
+
+        # test and trial functions
+        phi = fd.TestFunction(Q)
+        v = fd.TrialFunction(Q)
+
+        # stress, compressible formulation has an additional term
+        stress = -self.p * fd.Identity(self.dim) + self.mu * 2 * fd.sym(fd.grad(self.u))
+
+        if self.approximation.compressible:
+            stress -= 2/3 * self.mu * self.Identity(self.dim) * fd.div(self.u)
+
+        # surface integral for extruded mesh is different
+        # are we dealing with extruded mesh?
+        extruded_mesh = self.mesh.extruded
+
+        # choosing surfce integral
+        if extruded_mesh and self.subdomain_id in ["top", "bottom"]:
+            self.ds = {"top": fd.ds_t, "bottom": fd.ds_b}.get(self.subdomain_id)
+        else:
+            self.ds = fd.ds(self.subdomain_id)
+
+        a = phi * v * self.ds
+        L = - phi * fd.dot(fd.dot(stress, n), n) * self.ds
+
+        # setting up boundary condition, problem and solver
+        self.interior_null_bc = InteriorBC(Q, 0., [self.subdomain_id])
+        self.problem = fd.LinearVariationalProblem(a, L, self.force,
+                                                   bcs=self.interior_null_bc,
+                                                   constant_jacobian=True)
+        self.solver = fd.LinearVariationalSolver(self.problem, solver_parameters=self.solver_parameters)
+
+        self._solver_is_made = True

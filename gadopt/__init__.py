@@ -20,7 +20,7 @@ from .limiter import VertexBasedP1DGLimiter
 from .momentum_equation import StokesEquations
 from .preconditioners import SPDAssembledPC
 from .scalar_equation import EnergyEquation
-from .stokes_integrators import StokesSolver, create_stokes_nullspace
+from .stokes_integrators import BoundaryNormalStressSolver, StokesSolver, create_stokes_nullspace
 from .time_stepper import CrankNicolsonRK, ImplicitMidpoint, eSSPRKs3p3, eSSPRKs10p3
 from .utility import (
     LayerAveraging,

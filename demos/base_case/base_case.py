@@ -335,6 +335,14 @@ stokes_solver = StokesSolver(z, T, approximation, bcs=stokes_bcs,
                              constant_jacobian=True)
 # -
 
+# At this stage, our model is ready to run. Before doing so we also set up the
+# calculation of surface forces, to which dynamic topography is a proxy. That is simply
+# done by providing the stokes_solver and the subdomain id of the boundary we are interested in.
+
+# +
+surface_force_solver = BoundaryNormalStressSolver(stokes_solver, top_id)
+# -
+
 # We can now initiate the time-loop, with the Stokes and energy
 # systems solved seperately. These `solve` calls once again convert
 # symbolic mathematics into computation. In the time loop, set here to
@@ -348,7 +356,8 @@ for timestep in range(0, timesteps):
 
     # Write output:
     if timestep % output_frequency == 0:
-        output_file.write(*z.subfunctions, T)
+        surface_force = surface_force_solver.solve()
+        output_file.write(*z.subfunctions, T, surface_force)
 
     dt = t_adapt.update_timestep()
     time += dt
