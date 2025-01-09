@@ -2,9 +2,9 @@
 
 lint:
 	@echo "Linting module code"
-	@python3 -m flake8 gadopt
+	@if pip show -qq ruff; then python3 -m ruff check gadopt; else python3 -m flake8 gadopt; fi
 	@echo "Linting demos and tests"
-	@python3 -m flake8 demos tests
+	@if pip show -qq ruff; then python3 -m ruff check demos tests; else python3 -m flake8 demos tests; fi
 
 test:
 	$(MAKE) -C demos & $(MAKE) -C tests & wait
