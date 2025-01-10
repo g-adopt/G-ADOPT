@@ -4,9 +4,9 @@ mc_dir := mantle_convection
 mc_demos := $(addprefix $(mc_dir)/,$(mc_demo_names))
 mc_cases := $(addprefix $(mc_dir)/,$(mc_test_names))
 
-mm_test_names := compositional_buoyancy thermochemical_buoyancy
-mm_demo_names := compositional_buoyancy thermochemical_buoyancy
-mm_dir:= multi_material
+mm_test_names := compositional_buoyancy free_surface thermochemical_buoyancy
+mm_demo_names := compositional_buoyancy free_surface thermochemical_buoyancy
+mm_dir := multi_material
 mm_demos := $(addprefix $(mm_dir)/,$(mm_demo_names))
 mm_cases := $(addprefix $(mm_dir)/,$(mm_test_names))
 

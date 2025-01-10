@@ -177,7 +177,7 @@ class BoussinesqApproximation(BaseApproximation):
       alpha:     coefficient of thermal expansion
       T0:        reference temperature
       g:         gravitational acceleration
-      RaB:       compositional Rayleigh number; product of the Rayleigh and buoyancy numbers
+      Ra_c:       compositional Rayleigh number; product of the Rayleigh and buoyancy numbers
       delta_rho: compositional density difference from the reference density
       kappa:     thermal diffusivity
       H:         internal heating rate
@@ -200,7 +200,7 @@ class BoussinesqApproximation(BaseApproximation):
         alpha: Function | Number = 1,
         T0: Function | Number = 0,
         g: Function | Number = 1,
-        RaB: Function | Number = 0,
+        Ra_c: Function | Number = 0,
         delta_rho: Function | Number = 1,
         kappa: Function | Number = 1,
         H: Function | Number = 0,
@@ -212,7 +212,7 @@ class BoussinesqApproximation(BaseApproximation):
         self.T0 = T0
         self.g = ensure_constant(g)
         self.kappa_ref = ensure_constant(kappa)
-        self.RaB = RaB
+        self.Ra_c = Ra_c
         self.delta_rho = ensure_constant(delta_rho)
         self.H = ensure_constant(H)
 
@@ -222,7 +222,7 @@ class BoussinesqApproximation(BaseApproximation):
     def buoyancy(self, p, T):
         return (
             self.Ra * self.rho * self.alpha * (T - self.T0) * self.g
-            - self.RaB * self.delta_rho * self.g
+            - self.Ra_c * self.delta_rho * self.g
         )
 
     def rho_continuity(self):
@@ -269,7 +269,7 @@ class ExtendedBoussinesqApproximation(BoussinesqApproximation):
       alpha (Number):         coefficient of thermal expansion
       T0 (Function | Number): reference temperature
       g (Number):             gravitational acceleration
-      RaB (Number):           compositional Rayleigh number; product
+      Ra_c (Number):           compositional Rayleigh number; product
                               of the Rayleigh and buoyancy numbers
       delta_rho (Number):     compositional density difference from
                               the reference density
@@ -322,7 +322,7 @@ class TruncatedAnelasticLiquidApproximation(ExtendedBoussinesqApproximation):
       alpha (Number):         reference thermal expansion coefficient
       T0 (Function | Number): reference temperature
       g (Number):             gravitational acceleration
-      RaB (Number):           compositional Rayleigh number; product
+      Ra_c (Number):           compositional Rayleigh number; product
                               of the Rayleigh and buoyancy numbers
       delta_rho (Number):     compositional density difference from
                               the reference density
@@ -377,7 +377,7 @@ class AnelasticLiquidApproximation(TruncatedAnelasticLiquidApproximation):
       alpha (Number):         reference thermal expansion coefficient
       T0 (Function | Number): reference temperature
       g (Number):             gravitational acceleration
-      RaB (Number):           compositional Rayleigh number; product
+      Ra_c (Number):           compositional Rayleigh number; product
                               of the Rayleigh and buoyancy numbers
       delta_rho (Number):     compositional density difference from
                               the reference density

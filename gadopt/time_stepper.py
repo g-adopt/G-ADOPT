@@ -9,9 +9,9 @@ providing relevant parameters defined in the parent class (i.e. `ERKGeneric` or
 import operator
 from abc import ABC, abstractmethod
 from numbers import Number
-from typing import Any, Optional
+from typing import Callable
 
-import firedrake
+import firedrake as fd
 import numpy as np
 
 from .equations import Equation
@@ -22,69 +22,78 @@ class TimeIntegratorBase(ABC):
     """Defines the API for all time integrators."""
 
     @abstractmethod
-    def advance(self, t: float, update_forcings: Optional[firedrake.Function] = None):
+    def advance(self, update_forcings: Callable | None = None, t: float | None = None):
         """Advances equations for one time step.
 
-        Arguments:
-          t: Current simulation time
-          update_forcings: Firedrake function used to update any time-dependent boundary conditions
+        Args:
+          update_forcings:
+            Callable updating any time-dependent equation forcings
+          t:
+            Current simulation time
 
         """
-        pass
 
     @abstractmethod
-    def initialize(self, init_solution):
+    def initialise(self, init_solution):
         """Initialises the time integrator.
 
-        Arguments:
+        Args:
           init_solution: Firedrake function representing the initial solution.
 
         """
-        pass
 
 
 class TimeIntegrator(TimeIntegratorBase):
     """Time integrator object that marches a single equation.
 
     Args:
-      equation: G-ADOPT equation to integrate
-      solution: Firedrake function representing the equation's solution
-      dt: Integration time step
-      solution_old: Firedrake function representing the equation's solution
-                      at the previous timestep
-      solver_parameters: Dictionary of solver parameters provided to PETSc
-      strong_bcs: List of Firedrake Dirichlet boundary conditions
+      equation:
+        G-ADOPT equation to integrate
+      solution:
+        Firedrake function representing the equation's solution
+      dt:
+        Integration time step
+      solution_old:
+        Firedrake function representing the equation's solution at the previous timestep
+      solver_parameters:
+        Dictionary of solver parameters provided to PETSc
+      strong_bcs:
+        List of Firedrake Dirichlet boundary conditions
 
     """
 
     def __init__(
         self,
         equation: Equation,
-        solution: firedrake.Function,
-        dt: float,
-        solution_old: Optional[firedrake.Function] = None,
-        solver_parameters: Optional[dict[str, Any]] = None,
-        strong_bcs: Optional[list[firedrake.DirichletBC]] = None,
-    ):
+        solution: fd.Function,
+        dt: fd.Constant | float,
+        /,
+        *,
+        solution_old: fd.Function | None = None,
+        solver_parameters: dict[str, str | Number] = {},
+        strong_bcs: list[fd.DirichletBC] = [],
+    ) -> None:
         super(TimeIntegrator, self).__init__()
 
         self.equation = equation
-        self.test = firedrake.TestFunction(solution.function_space())
         self.solution = solution
         self.dt = float(dt)
         self.dt_const = ensure_constant(dt)
-        self.solution_old = solution_old or firedrake.Function(solution, name='Old'+solution.name())
+        self.solution_old = solution_old or fd.Function(
+            solution, name="Old" + solution.name()
+        )
+        self.solver_parameters = solver_parameters
+        self.strong_bcs = strong_bcs
+
+        self.hom_bcs = [
+            bci.__class__(bci.function_space(), 0, bci.sub_domain)
+            for bci in self.strong_bcs
+        ]
 
         # unique identifier used in solver
-        self.name = '-'.join([self.__class__.__name__,
-                              self.equation.__class__.__name__])
-
-        self.solver_parameters = {}
-        if solver_parameters:
-            self.solver_parameters.update(solver_parameters)
-
-        self.strong_bcs = strong_bcs or []
-        self.hom_bcs = [bci.__class__(bci.function_space(), 0, bci.sub_domain) for bci in self.strong_bcs]
+        self.name = "-".join(
+            [self.__class__.__name__, self.equation.__class__.__name__]
+        )
 
 
 class RungeKuttaTimeIntegrator(TimeIntegrator):
@@ -93,23 +102,30 @@ class RungeKuttaTimeIntegrator(TimeIntegrator):
     @abstractmethod
     def get_final_solution(self):
         """Evaluates the final solution"""
-        pass
 
     @abstractmethod
-    def solve_stage(self, i_stage, t, update_forcings=None):
+    def solve_stage(
+        self,
+        i_stage: int,
+        update_forcings: Callable | None = None,
+        t: float | None = None,
+    ):
         """Solves a single stage of step from t to t+dt.
-        All functions that the equation depends on must be at right state
-        corresponding to each sub-step.
 
+        All functions that the equation depends on must be at right state corresponding
+        to each sub-step.
         """
-        pass
 
-    def advance(self, t, update_forcings=None):
+    def advance(
+        self, update_forcings: Callable | None = None, t: float | None = None
+    ) -> None:
         """Advances equations for one time step."""
-        if not self._initialized:
-            self.initialize(self.solution)
+        if not self._initialised:
+            self.initialise(self.solution)
+
         for i in range(self.n_stages):
-            self.solve_stage(i, t, update_forcings)
+            self.solve_stage(i, update_forcings, t)
+
         self.get_final_solution()
 
 
@@ -118,42 +134,44 @@ class ERKGeneric(RungeKuttaTimeIntegrator):
 
     Implements the Butcher form. All terms in the equation are treated explicitly.
 
-    Arguments:
-      equation: G-ADOPT equation to solve
-      solution: Firedrake function reperesenting the equation's solution
-      dt: Integration time step
-      solution_old: Firedrake function representing the equation's solution
-                      at the previous timestep
-      bnd_conditions: Dictionary of boundary conditions passed to the equation
-      solver_parameters: Dictionary of solver parameters provided to PETSc
-      strong_bcs: List of Firedrake Dirichlet boundary conditions
+    Args:
+      equation:
+        G-ADOPT equation to solve
+      solution:
+        Firedrake function reperesenting the equation's solution
+      dt:
+        Integration time step
+      solution_old:
+        Firedrake function representing the equation's solution at the previous timestep
+      solver_parameters:
+        Dictionary of solver parameters provided to PETSc
+      strong_bcs:
+        List of Firedrake Dirichlet boundary conditions
 
     """
+
     def __init__(
         self,
         equation: Equation,
-        solution: firedrake.Function,
-        dt: float,
-        solution_old: Optional[firedrake.Function] = None,
-        bnd_conditions: Optional[dict[int, dict[str, Number]]] = None,
-        solver_parameters: Optional[dict[str, Any]] = {},
-        strong_bcs: Optional[list[firedrake.DirichletBC]] = None,
-    ):
-        super(ERKGeneric, self).__init__(
-            equation, solution, dt, solution_old, solver_parameters, strong_bcs
-        )
-        self._initialized = False
+        solution: fd.Function,
+        dt: fd.Constant | float,
+        /,
+        **kwargs,
+    ) -> None:
+        super(ERKGeneric, self).__init__(equation, solution, dt, **kwargs)
+
+        self._initialised = False
+
         V = solution.function_space()
         assert V == equation.trial_space
 
         self.tendency = []
         for i in range(self.n_stages):
-            k = firedrake.Function(V, name='tendency{:}'.format(i))
+            k = fd.Function(V, name="tendency{:}".format(i))
             self.tendency.append(k)
 
         # fully explicit evaluation
-        trial = firedrake.TrialFunction(V)
-        self.a_rk = self.equation.mass(trial)
+        self.a_rk = self.equation.mass(fd.TrialFunction(V))
         self.l_rk = self.dt_const * self.equation.residual(self.solution)
 
         self._nontrivial = self.l_rk != 0
@@ -162,27 +180,34 @@ class ERKGeneric(RungeKuttaTimeIntegrator):
         if self._nontrivial:
             self.sol_expressions = []
             for i_stage in range(self.n_stages):
-                sol_expr = sum(map(operator.mul, self.tendency[:i_stage], self.a[i_stage][:i_stage]))
-                self.sol_expressions.append(sol_expr)
+                tendency = self.tendency[:i_stage]
+                a = self.a[i_stage][:i_stage]
+                self.sol_expressions.append(sum(map(operator.mul, tendency, a)))
+
             self.final_sol_expr = sum(map(operator.mul, self.tendency, self.b))
 
         self.update_solver()
 
-    def update_solver(self):
+    def update_solver(self) -> None:
         """Create solver objects"""
         if self._nontrivial:
             self.solver = []
             for i in range(self.n_stages):
-                prob = firedrake.LinearVariationalProblem(self.a_rk, self.l_rk, self.tendency[i], bcs=self.hom_bcs)
-                solver = firedrake.LinearVariationalSolver(prob, options_prefix=self.name + '_k{:}'.format(i),
-                                                           solver_parameters=self.solver_parameters)
+                prob = fd.LinearVariationalProblem(
+                    self.a_rk, self.l_rk, self.tendency[i], bcs=self.hom_bcs
+                )
+                solver = fd.LinearVariationalSolver(
+                    prob,
+                    options_prefix=self.name + "_k{:}".format(i),
+                    solver_parameters=self.solver_parameters,
+                )
                 self.solver.append(solver)
 
-    def initialize(self, solution):
+    def initialise(self, solution) -> None:
         self.solution_old.assign(solution)
-        self._initialized = True
+        self._initialised = True
 
-    def update_solution(self, i_stage):
+    def update_solution(self, i_stage) -> None:
         """Computes the solution of the i-th stage
 
         Tendencies must have been evaluated first.
@@ -192,22 +217,26 @@ class ERKGeneric(RungeKuttaTimeIntegrator):
         if self._nontrivial and i_stage > 0:
             self.solution += self.sol_expressions[i_stage]
 
-    def solve_tendency(self, i_stage, t, update_forcings=None):
+    def solve_tendency(self, i_stage, update_forcings, t) -> None:
         """Evaluates the tendency of i-th stage"""
         if self._nontrivial:
-            if update_forcings is not None:
-                update_forcings(t + self.c[i_stage]*self.dt)
+            if update_forcings is not None and t is not None:
+                update_forcings(t + self.c[i_stage] * self.dt)
+            elif update_forcings is not None:
+                update_forcings()
+
             self.solver[i_stage].solve()
 
-    def get_final_solution(self):
+    def get_final_solution(self) -> None:
         self.solution.assign(self.solution_old)
         if self._nontrivial:
             self.solution += self.final_sol_expr
+
         self.solution_old.assign(self.solution)
 
-    def solve_stage(self, i_stage, t, update_forcings=None):
+    def solve_stage(self, i_stage, update_forcings, t) -> None:
         self.update_solution(i_stage)
-        self.solve_tendency(i_stage, t, update_forcings)
+        self.solve_tendency(i_stage, update_forcings, t)
 
 
 class DIRKGeneric(RungeKuttaTimeIntegrator):
@@ -216,36 +245,33 @@ class DIRKGeneric(RungeKuttaTimeIntegrator):
     All derived classes must define the Butcher tableau coefficients :attr:`a`,
     :attr:`b`, :attr:`c`.
 
-    Arguments:
-      equation: G-ADOPT equation to solve
-      solution: Firedrake function reperesenting the equation's solution
-      dt: Integration time step
-      solution_old: Firedrake function representing the equation's solution
-                      at the previous timestep
-      bnd_conditions: Dictionary of boundary conditions passed to the equation
-      solver_parameters: Dictionary of solver parameters provided to PETSc
-      strong_bcs: List of Firedrake Dirichlet boundary conditions
-      terms_to_add: Defines which terms of the equation are to be
-                      added to this solver.
-                      Default 'all' implies ['implicit', 'explicit', 'source'].
-
+    Args:
+      equation:
+        G-ADOPT equation to solve
+      solution:
+        Firedrake function reperesenting the equation's solution
+      dt:
+        Integration time step
+      solution_old:
+        Firedrake function representing the equation's solution at the previous timestep
+      solver_parameters:
+        Dictionary of solver parameters provided to PETSc
+      strong_bcs:
+        List of Firedrake Dirichlet boundary conditions
     """
+
     def __init__(
         self,
         equation: Equation,
-        solution: firedrake.Function,
-        dt: float,
-        solution_old: Optional[firedrake.Function] = None,
-        bnd_conditions: Optional[dict[int, dict[str, Number]]] = None,
-        solver_parameters: Optional[dict[str, Any]] = {},
-        strong_bcs: Optional[list[firedrake.DirichletBC]] = None,
-        terms_to_add: Optional[str | list[str]] = "all",
-    ):
-        super(DIRKGeneric, self).__init__(
-            equation, solution, dt, solution_old, solver_parameters, strong_bcs
-        )
-        self.solver_parameters.setdefault('snes_type', 'newtonls')
-        self._initialized = False
+        solution: fd.Function,
+        dt: fd.Constant | float,
+        /,
+        **kwargs,
+    ) -> None:
+        super(DIRKGeneric, self).__init__(equation, solution, dt, **kwargs)
+
+        self.solver_parameters.setdefault("snes_type", "newtonls")
+        self._initialised = False
 
         fs = solution.function_space()
         assert fs == equation.trial_space
@@ -255,57 +281,67 @@ class DIRKGeneric(RungeKuttaTimeIntegrator):
         # Allocate tendency fields
         self.k = []
         for i in range(self.n_stages):
-            fname = '{:}_k{:}'.format(self.name, i)
-            self.k.append(firedrake.Function(fs, name=fname))
+            fname = "{:}_k{:}".format(self.name, i)
+            self.k.append(fd.Function(fs, name=fname))
 
         # construct variational problems
         self.F = []
         if not mixed_space:
             for i in range(self.n_stages):
-                for j in range(i+1):
+                for j in range(i + 1):
                     if j == 0:
-                        u = self.solution_old + self.a[i][j]*self.dt_const*self.k[j]
+                        u = self.solution_old + self.a[i][j] * self.dt_const * self.k[j]
                     else:
-                        u += self.a[i][j]*self.dt_const*self.k[j]
+                        u += self.a[i][j] * self.dt_const * self.k[j]
+
                 self.F.append(self.equation.mass(self.k[i]) - self.equation.residual(u))
         else:
             # solution must be split before computing sum
             # pass components to equation in a list
             for i in range(self.n_stages):
-                for j in range(i+1):
+                for j in range(i + 1):
                     if j == 0:
                         u = []  # list of components in the mixed space
-                        for s, k in zip(firedrake.split(self.solution_old), firedrake.split(self.k[j])):
-                            u.append(s + self.a[i][j]*self.dt_const*k)
+                        for s, k in zip(
+                            fd.split(self.solution_old), fd.split(self.k[j])
+                        ):
+                            u.append(s + self.a[i][j] * self.dt_const * k)
                     else:
-                        for l, k in enumerate(firedrake.split(self.k[j])):
-                            u[l] += self.a[i][j]*self.dt_const*k
-                self.F.append(self.equation.mass(self.k[i]) - self.equation.residual(u))
+                        for l, k in enumerate(fd.split(self.k[j])):
+                            u[l] += self.a[i][j] * self.dt_const * k
+
+                self.F.append(self.equation.mass(self.k[i]) - self.equation.residual())
+
         self.update_solver()
 
         # construct expressions for stage solutions
         self.sol_expressions = []
         for i_stage in range(self.n_stages):
-            sol_expr = sum(map(operator.mul, self.k[:i_stage+1], self.dt_const*self.a[i_stage][:i_stage+1]))
-            self.sol_expressions.append(sol_expr)
-        self.final_sol_expr = self.solution_old + sum(map(operator.mul, self.k, self.dt_const*self.b))
+            k = self.k[: i_stage + 1]
+            a = self.a[i_stage][: i_stage + 1]
+            self.sol_expressions.append(sum(map(operator.mul, k, self.dt_const * a)))
 
-    def update_solver(self):
+        self.final_sol_expr = self.solution_old + sum(
+            map(operator.mul, self.k, self.dt_const * self.b)
+        )
+
+    def update_solver(self) -> None:
         """Create solver objects"""
         self.solver = []
         for i in range(self.n_stages):
-            p = firedrake.NonlinearVariationalProblem(self.F[i], self.k[i], bcs=self.hom_bcs)
-            sname = '{:}_stage{:}_'.format(self.name, i)
+            p = fd.NonlinearVariationalProblem(self.F[i], self.k[i], bcs=self.hom_bcs)
+            sname = "{:}_stage{:}_".format(self.name, i)
             self.solver.append(
-                firedrake.NonlinearVariationalSolver(
-                    p, solver_parameters=self.solver_parameters,
-                    options_prefix=sname))
+                fd.NonlinearVariationalSolver(
+                    p, solver_parameters=self.solver_parameters, options_prefix=sname
+                )
+            )
 
-    def initialize(self, init_cond):
+    def initialise(self, init_cond) -> None:
         self.solution_old.assign(init_cond)
-        self._initialized = True
+        self._initialised = True
 
-    def update_solution(self, i_stage):
+    def update_solution(self, i_stage) -> None:
         """Updates solution to i_stage sub-stage.
 
         Tendencies must have been evaluated first.
@@ -313,24 +349,29 @@ class DIRKGeneric(RungeKuttaTimeIntegrator):
         """
         self.solution.assign(self.solution_old + self.sol_expressions[i_stage])
 
-    def solve_tendency(self, i_stage, t, update_forcings=None):
+    def solve_tendency(self, i_stage, update_forcings, t) -> None:
         """Evaluates the tendency of i-th stage"""
         if i_stage == 0:
-            # NOTE solution may have changed in coupled system
+            # NOTE: solution may have changed in coupled system
             for bci in self.strong_bcs:
                 bci.apply(self.solution)
             self.solution_old.assign(self.solution)
-        if not self._initialized:
-            raise ValueError('Time integrator {:} is not initialized'.format(self.name))
-        if update_forcings is not None:
-            update_forcings(t + self.c[i_stage]*self.dt)
+
+        if not self._initialised:
+            raise ValueError("Time integrator {:} is not initialised".format(self.name))
+
+        if update_forcings is not None and t is not None:
+            update_forcings(t + self.c[i_stage] * self.dt)
+        elif update_forcings is not None:
+            update_forcings()
+
         self.solver[i_stage].solve()
 
-    def get_final_solution(self):
+    def get_final_solution(self) -> None:
         self.solution.assign(self.final_sol_expr)
 
-    def solve_stage(self, i_stage, t, update_forcings=None):
-        self.solve_tendency(i_stage, t, update_forcings)
+    def solve_stage(self, i_stage, update_forcings, t) -> None:
+        self.solve_tendency(i_stage, update_forcings, t)
         self.update_solution(i_stage)
 
 
@@ -350,19 +391,16 @@ class AbstractRKScheme(ABC):
     @abstractmethod
     def a(self):
         """Runge-Kutta matrix :math:`a_{i,j}` of the Butcher tableau"""
-        pass
 
     @property
     @abstractmethod
     def b(self):
         """weights :math:`b_{i}` of the Butcher tableau"""
-        pass
 
     @property
     @abstractmethod
     def c(self):
         """nodes :math:`c_{i}` of the Butcher tableau"""
-        pass
 
     @property
     @abstractmethod
@@ -372,16 +410,17 @@ class AbstractRKScheme(ABC):
         Value 1.0 corresponds to Forward Euler time step.
 
         """
-        pass
 
-    def __init__(self):
-        super(AbstractRKScheme, self).__init__()
+    def __init__(self) -> None:
+        super().__init__()
         self.a = np.array(self.a)
         self.b = np.array(self.b)
         self.c = np.array(self.c)
 
-        assert not np.triu(self.a, 1).any(), 'Butcher tableau must be lower diagonal'
-        assert np.allclose(np.sum(self.a, axis=1), self.c), 'Inconsistent Butcher tableau: Row sum of a is not c'
+        assert not np.triu(self.a, 1).any(), "Butcher tableau must be lower diagonal"
+        assert np.allclose(
+            np.sum(self.a, axis=1), self.c
+        ), "Inconsistent Butcher tableau: Row sum of a is not c"
 
         self.n_stages = len(self.b)
         self.butcher = np.vstack((self.a, self.b))
@@ -390,14 +429,15 @@ class AbstractRKScheme(ABC):
         self.is_dirk = np.diag(self.a).all()
 
 
-def shu_osher_butcher(α_or_λ, β_or_μ):
-    """
+def shu_osher_butcher(α_or_λ, β_or_μ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Produces a Butcher tableau from a Shu-Osher form.
+
     Generate arrays composing the Butcher tableau of a Runge-Kutta method from the
     coefficient arrays of the equivalent, original or modified, Shu-Osher form.
     Code adapted from RK-Opt written in MATLAB by David Ketcheson.
     See also Ketcheson, Macdonald, and Gottlieb (2009).
 
-    Function arguments:
+    Function Args:
     α_or_λ : array_like, shape (n + 1, n)
     β_or_μ : array_like, shape (n + 1, n)
     """
@@ -406,13 +446,13 @@ def shu_osher_butcher(α_or_λ, β_or_μ):
     A = np.linalg.solve(X, β_or_μ[:-1])
     b = np.transpose(β_or_μ[-1] + np.dot(α_or_λ[-1], A))
     c = np.sum(A, axis=1)
+
     return A, b, c
 
 
 class ForwardEulerAbstract(AbstractRKScheme):
-    """
-    Forward Euler method
-    """
+    """Forward Euler method"""
+
     a = [[0]]
     b = [1.0]
     c = [0]
@@ -420,8 +460,7 @@ class ForwardEulerAbstract(AbstractRKScheme):
 
 
 class ERKLSPUM2Abstract(AbstractRKScheme):
-    """
-    ERKLSPUM2, 3-stage, 2nd order Explicit Runge Kutta method
+    """ERKLSPUM2, 3-stage, 2nd order Explicit Runge Kutta method
 
     From IMEX RK scheme (17) in Higureras et al. (2014).
 
@@ -429,44 +468,39 @@ class ERKLSPUM2Abstract(AbstractRKScheme):
     Runge-Kutta methods. Journal of Computational and Applied Mathematics
     272(2014) 116-140. http://dx.doi.org/10.1016/j.cam.2014.05.011
     """
-    a = [[0, 0, 0],
-         [5.0/6.0, 0, 0],
-         [11.0/24.0, 11.0/24.0, 0]]
-    b = [24.0/55.0, 1.0/5.0, 4.0/11.0]
-    c = [0, 5.0/6.0, 11.0/12.0]
+
+    a = [[0, 0, 0], [5.0 / 6.0, 0, 0], [11.0 / 24.0, 11.0 / 24.0, 0]]
+    b = [24.0 / 55.0, 1.0 / 5.0, 4.0 / 11.0]
+    c = [0, 5.0 / 6.0, 11.0 / 12.0]
     cfl_coeff = 1.2
 
 
 class ERKLPUM2Abstract(AbstractRKScheme):
-    """
-    ERKLPUM2, 3-stage, 2nd order
-    Explicit Runge Kutta method
+    """ERKLPUM2, 3-stage, 2nd order Explicit Runge Kutta method
 
     From IMEX RK scheme (20) in Higureras et al. (2014).
 
-    Higueras et al (2014). Optimized strong stability preserving IMEX
-    Runge-Kutta methods. Journal of Computational and Applied Mathematics
-    272(2014) 116-140. http://dx.doi.org/10.1016/j.cam.2014.05.011
+    Higueras et al (2014).
+    Optimized strong stability preserving IMEX Runge-Kutta methods.
+    Journal of Computational and Applied Mathematics 272(2014) 116-140.
+    http://dx.doi.org/10.1016/j.cam.2014.05.011
     """
-    a = [[0, 0, 0],
-         [1.0/2.0, 0, 0],
-         [1.0/2.0, 1.0/2.0, 0]]
-    b = [1.0/3.0, 1.0/3.0, 1.0/3.0]
-    c = [0, 1.0/2.0, 1.0]
+
+    a = [[0, 0, 0], [1.0 / 2.0, 0, 0], [1.0 / 2.0, 1.0 / 2.0, 0]]
+    b = [1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0]
+    c = [0, 1.0 / 2.0, 1.0]
     cfl_coeff = 2.0
 
 
 class ERKMidpointAbstract(AbstractRKScheme):
-    a = [[0.0, 0.0],
-         [0.5, 0.0]]
+    a = [[0.0, 0.0], [0.5, 0.0]]
     b = [0.0, 1.0]
     c = [0.0, 0.5]
     cfl_coeff = 1.0
 
 
 class SSPRK33Abstract(AbstractRKScheme):
-    r"""
-    3rd order Strong Stability Preserving Runge-Kutta scheme, SSP(3,3).
+    r"""3rd order Strong Stability Preserving Runge-Kutta scheme, SSP(3,3).
 
     This scheme has Butcher tableau
 
@@ -480,10 +514,9 @@ class SSPRK33Abstract(AbstractRKScheme):
 
     CFL coefficient is 1.0
     """
-    a = [[0, 0, 0],
-         [1.0, 0, 0],
-         [0.25, 0.25, 0]]
-    b = [1.0/6.0, 1.0/6.0, 2.0/3.0]
+
+    a = [[0, 0, 0], [1.0, 0, 0], [0.25, 0.25, 0]]
+    b = [1.0 / 6.0, 1.0 / 6.0, 2.0 / 3.0]
     c = [0, 1.0, 0.5]
     cfl_coeff = 1.0
 
@@ -796,9 +829,8 @@ class eSSPRKs10p3Abstract(AbstractRKScheme):
 
 
 class BackwardEulerAbstract(AbstractRKScheme):
-    """
-    Backward Euler method
-    """
+    """Backward Euler method"""
+
     a = [[1.0]]
     b = [1.0]
     c = [1.0]
@@ -806,8 +838,7 @@ class BackwardEulerAbstract(AbstractRKScheme):
 
 
 class ImplicitMidpointAbstract(AbstractRKScheme):
-    r"""
-    Implicit midpoint method, second order.
+    r"""Implicit midpoint method, second order.
 
     This method has the Butcher tableau
 
@@ -818,6 +849,7 @@ class ImplicitMidpointAbstract(AbstractRKScheme):
         \end{array}
 
     """
+
     a = [[0.5]]
     b = [1.0]
     c = [0.5]
@@ -828,16 +860,15 @@ class CrankNicolsonAbstract(AbstractRKScheme):
     """
     Crank-Nicolson scheme
     """
-    a = [[0.0, 0.0],
-         [0.5, 0.5]]
+
+    a = [[0.0, 0.0], [0.5, 0.5]]
     b = [0.5, 0.5]
     c = [0.0, 1.0]
     cfl_coeff = CFL_UNCONDITIONALLY_STABLE
 
 
 class DIRK22Abstract(AbstractRKScheme):
-    r"""
-    2-stage, 2nd order, L-stable Diagonally Implicit Runge Kutta method
+    r"""2-stage, 2nd order, L-stable Diagonally Implicit Runge Kutta method
 
     This method has the Butcher tableau
 
@@ -856,17 +887,16 @@ class DIRK22Abstract(AbstractRKScheme):
     time-dependent partial differential equations. Applied Numerical
     Mathematics, 25:151-167. http://dx.doi.org/10.1137/0732037
     """
-    gamma = (2.0 + np.sqrt(2.0))/2.0
-    a = [[gamma, 0],
-         [1-gamma, gamma]]
-    b = [1-gamma, gamma]
+
+    gamma = (2.0 + np.sqrt(2.0)) / 2.0
+    a = [[gamma, 0], [1 - gamma, gamma]]
+    b = [1 - gamma, gamma]
     c = [gamma, 1]
     cfl_coeff = CFL_UNCONDITIONALLY_STABLE
 
 
 class DIRK23Abstract(AbstractRKScheme):
-    r"""
-    2-stage, 3rd order Diagonally Implicit Runge Kutta method
+    r"""2-stage, 3rd order Diagonally Implicit Runge Kutta method
 
     This method has the Butcher tableau
 
@@ -885,17 +915,16 @@ class DIRK23Abstract(AbstractRKScheme):
     time-dependent partial differential equations. Applied Numerical
     Mathematics, 25:151-167. http://dx.doi.org/10.1137/0732037
     """
-    gamma = (3 + np.sqrt(3))/6
-    a = [[gamma, 0],
-         [1-2*gamma, gamma]]
+
+    gamma = (3 + np.sqrt(3)) / 6
+    a = [[gamma, 0], [1 - 2 * gamma, gamma]]
     b = [0.5, 0.5]
-    c = [gamma, 1-gamma]
+    c = [gamma, 1 - gamma]
     cfl_coeff = CFL_UNCONDITIONALLY_STABLE
 
 
 class DIRK33Abstract(AbstractRKScheme):
-    """
-    3-stage, 3rd order, L-stable Diagonally Implicit Runge Kutta method
+    """3-stage, 3rd order, L-stable Diagonally Implicit Runge Kutta method
 
     From DIRK(3,4,3) IMEX scheme in Ascher et al. (1997)
 
@@ -903,20 +932,18 @@ class DIRK33Abstract(AbstractRKScheme):
     time-dependent partial differential equations. Applied Numerical
     Mathematics, 25:151-167. http://dx.doi.org/10.1137/0732037
     """
+
     gamma = 0.4358665215
-    b1 = -3.0/2.0*gamma**2 + 4*gamma - 1.0/4.0
-    b2 = 3.0/2.0*gamma**2 - 5*gamma + 5.0/4.0
-    a = [[gamma, 0, 0],
-         [(1-gamma)/2, gamma, 0],
-         [b1, b2, gamma]]
+    b1 = -3.0 / 2.0 * gamma**2 + 4 * gamma - 1.0 / 4.0
+    b2 = 3.0 / 2.0 * gamma**2 - 5 * gamma + 5.0 / 4.0
+    a = [[gamma, 0, 0], [(1 - gamma) / 2, gamma, 0], [b1, b2, gamma]]
     b = [b1, b2, gamma]
-    c = [gamma, (1+gamma)/2, 1]
+    c = [gamma, (1 + gamma) / 2, 1]
     cfl_coeff = CFL_UNCONDITIONALLY_STABLE
 
 
 class DIRK43Abstract(AbstractRKScheme):
-    """
-    4-stage, 3rd order, L-stable Diagonally Implicit Runge Kutta method
+    """4-stage, 3rd order, L-stable Diagonally Implicit Runge Kutta method
 
     From DIRK(4,4,3) IMEX scheme in Ascher et al. (1997)
 
@@ -924,18 +951,20 @@ class DIRK43Abstract(AbstractRKScheme):
     time-dependent partial differential equations. Applied Numerical
     Mathematics, 25:151-167. http://dx.doi.org/10.1137/0732037
     """
-    a = [[0.5, 0, 0, 0],
-         [1.0/6.0, 0.5, 0, 0],
-         [-0.5, 0.5, 0.5, 0],
-         [3.0/2.0, -3.0/2.0, 0.5, 0.5]]
-    b = [3.0/2.0, -3.0/2.0, 0.5, 0.5]
-    c = [0.5, 2.0/3.0, 0.5, 1.0]
+
+    a = [
+        [0.5, 0, 0, 0],
+        [1.0 / 6.0, 0.5, 0, 0],
+        [-0.5, 0.5, 0.5, 0],
+        [3.0 / 2.0, -3.0 / 2.0, 0.5, 0.5],
+    ]
+    b = [3.0 / 2.0, -3.0 / 2.0, 0.5, 0.5]
+    c = [0.5, 2.0 / 3.0, 0.5, 1.0]
     cfl_coeff = CFL_UNCONDITIONALLY_STABLE
 
 
 class DIRKLSPUM2Abstract(AbstractRKScheme):
-    """
-    DIRKLSPUM2, 3-stage, 2nd order, L-stable Diagonally Implicit Runge Kutta method
+    """DIRKLSPUM2, 3-stage, 2nd order, L-stable Diagonally Implicit Runge Kutta method
 
     From IMEX RK scheme (17) in Higureras et al. (2014).
 
@@ -943,17 +972,19 @@ class DIRKLSPUM2Abstract(AbstractRKScheme):
     Runge-Kutta methods. Journal of Computational and Applied Mathematics
     272(2014) 116-140. http://dx.doi.org/10.1016/j.cam.2014.05.011
     """
-    a = [[2.0/11.0, 0, 0],
-         [205.0/462.0, 2.0/11.0, 0],
-         [2033.0/4620.0, 21.0/110.0, 2.0/11.0]]
-    b = [24.0/55.0, 1.0/5.0, 4.0/11.0]
-    c = [2.0/11.0, 289.0/462.0, 751.0/924.0]
+
+    a = [
+        [2.0 / 11.0, 0, 0],
+        [205.0 / 462.0, 2.0 / 11.0, 0],
+        [2033.0 / 4620.0, 21.0 / 110.0, 2.0 / 11.0],
+    ]
+    b = [24.0 / 55.0, 1.0 / 5.0, 4.0 / 11.0]
+    c = [2.0 / 11.0, 289.0 / 462.0, 751.0 / 924.0]
     cfl_coeff = 4.34  # NOTE for linear problems, nonlin => 3.82
 
 
 class DIRKLPUM2Abstract(AbstractRKScheme):
-    """
-    DIRKLPUM2, 3-stage, 2nd order, L-stable Diagonally Implicit Runge Kutta method
+    """DIRKLPUM2, 3-stage, 2nd order, L-stable Diagonally Implicit Runge Kutta method
 
     From IMEX RK scheme (20) in Higureras et al. (2014).
 
@@ -961,11 +992,14 @@ class DIRKLPUM2Abstract(AbstractRKScheme):
     Runge-Kutta methods. Journal of Computational and Applied Mathematics
     272(2014) 116-140. http://dx.doi.org/10.1016/j.cam.2014.05.011
     """
-    a = [[2.0/11.0, 0, 0],
-         [41.0/154.0, 2.0/11.0, 0],
-         [289.0/847.0, 42.0/121.0, 2.0/11.0]]
-    b = [1.0/3.0, 1.0/3.0, 1.0/3.0]
-    c = [2.0/11.0, 69.0/154.0, 67.0/77.0]
+
+    a = [
+        [2.0 / 11.0, 0, 0],
+        [41.0 / 154.0, 2.0 / 11.0, 0],
+        [289.0 / 847.0, 42.0 / 121.0, 2.0 / 11.0],
+    ]
+    b = [1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0]
+    c = [2.0 / 11.0, 69.0 / 154.0, 67.0 / 77.0]
     cfl_coeff = 4.34  # NOTE for linear problems, nonlin => 3.09
 
 
