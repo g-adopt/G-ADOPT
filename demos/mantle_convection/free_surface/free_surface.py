@@ -57,7 +57,7 @@ from gadopt import *
 nx, ny = 40, 40  # Number of cells in x and y directions.
 mesh = UnitSquareMesh(nx, ny, quadrilateral=True)  # Square mesh generated via firedrake
 mesh.cartesian = True
-left_id, right_id, bottom_id, top_id = 1, 2, 3, 4  # Boundary IDs
+boundary = get_boundary_ids(mesh)  # Boundary IDs
 # -
 
 # Now we set up the function spaces. As before we use Q2 and Q1 for the velocity
@@ -127,15 +127,15 @@ T.interpolate((1.0 - X[1]) + (0.05 * cos(pi * X[0]) * sin(pi * X[1])))
 Bfs = 10.  # Free surface buoyancy number
 
 stokes_bcs = {
-    bottom_id: {"uy": 0},
-    top_id: {"free_surface": {"RaFS": Ra*Bfs}},
-    left_id: {"ux": 0},
-    right_id: {"ux": 0},
+    boundary.bottom: {"uy": 0},
+    boundary.top: {"free_surface": {"RaFS": Ra*Bfs}},
+    boundary.left: {"ux": 0},
+    boundary.right: {"ux": 0},
 }
 
 temp_bcs = {
-    bottom_id: {"T": 1.0},
-    top_id: {"T": 0.0},
+    boundary.bottom: {"T": 1.0},
+    boundary.top: {"T": 0.0},
 }
 # -
 
@@ -150,7 +150,7 @@ plog.log_str(
     "timestep time dt maxchange u_rms u_rms_surf ux_max nu_top nu_base energy avg_t eta_min eta_max"
 )
 
-gd = GeodynamicalDiagnostics(z, T, bottom_id, top_id)
+gd = GeodynamicalDiagnostics(z, T, boundary.bottom, boundary.top)
 # -
 
 # Now let's setup the solver objects.
@@ -201,7 +201,7 @@ for timestep in range(0, timesteps):
     # Log diagnostics:
     plog.log_str(
         f"{timestep} {time} {float(delta_t)} {maxchange} "
-        f"{gd.u_rms()} {gd.u_rms_top()} {gd.ux_max(top_id)} {gd.Nu_top()} "
+        f"{gd.u_rms()} {gd.u_rms_top()} {gd.ux_max(boundary.top)} {gd.Nu_top()} "
         f"{gd.Nu_bottom()} {energy_conservation} {gd.T_avg()} "
         f"{z.subfunctions[2].dat.data.min()} {z.subfunctions[2].dat.data.max()}"
     )
@@ -317,7 +317,7 @@ with CheckpointFile("Final_State.h5", "w") as final_checkpoint:
 # eta_base_steady.interpolate((-z_base.subfunctions[1] + 2 * Dx(z_base.subfunctions[0][1], 1))/(Ra*T_base-Ra*10))
 #
 # # project out the constant associated with the pressure nullspace for the base case as all boundaries are closed
-# coef = assemble(eta_base_steady * ds(top_id))/assemble(Constant(1.0)*ds(top_id, domain=mesh_base))
+# coef = assemble(eta_base_steady * ds(boundary.top))/assemble(Constant(1.0)*ds(boundary.top, domain=mesh_base))
 # eta_base_steady.project(eta_base_steady - coef)
 #
 # # Interpolate the base case dynamic topography field onto the original mesh for plotting

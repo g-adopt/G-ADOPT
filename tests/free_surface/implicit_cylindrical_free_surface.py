@@ -26,7 +26,7 @@ class CylindricalImplicitFreeSurfaceModel(ImplicitFreeSurfaceModel):
         # Construct a circle mesh and then extrude into a cylinder:
         mesh1d = CircleManifoldMesh(self.ncells, radius=self.rmin, degree=2)
         self.mesh = ExtrudedMesh(mesh1d, layers=self.nlayers, extrusion_type='radial')
-        self.bottom_id, self.top_id = "bottom", "top"
+        self.boundary = get_boundary_ids(self.mesh)
         self.ds = CombinedSurfaceMeasure(self.mesh, degree=6)
 
     def initialise_wavenumber(self):
@@ -42,8 +42,8 @@ class CylindricalImplicitFreeSurfaceModel(ImplicitFreeSurfaceModel):
 
     def setup_bcs(self):
         self.stokes_bcs = {
-            self.top_id: {'free_surface': {}},  # Free surface boundary conditions are applied automatically in stokes_integrators and momentum_equation for implicit free surface coupling
-            self.bottom_id: {'un': 0}
+            self.boundary.top: {'free_surface': {}},  # Free surface boundary conditions are applied automatically in stokes_integrators and momentum_equation for implicit free surface coupling
+            self.boundary.bottom: {'un': 0}
         }
 
     def setup_nullspaces(self):

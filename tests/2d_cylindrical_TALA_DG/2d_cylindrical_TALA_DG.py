@@ -59,7 +59,7 @@ with CheckpointFile("initial_condition_mat_prop/Final_State.h5", mode="r") as f:
 # We set the mesh `cartesian` attribute to False, which ensures that
 # the unit vector points radially, in the direction opposite to gravity.
 mesh.cartesian = False
-bottom_id, top_id = "bottom", "top"
+boundary = get_boundary_ids(mesh)
 
 V = VectorFunctionSpace(mesh, "CG", 2)  # Velocity function space (vector)
 V_scalar = FunctionSpace(mesh, "CG", 2)  # CG2 Scalar function space
@@ -173,13 +173,13 @@ Z_near_nullspace = create_stokes_nullspace(Z, closed=False, rotational=True, tra
 
 # +
 stokes_bcs = {
-    bottom_id: {'un': 0},
-    top_id: {'un': 0},
+    boundary.bottom: {'un': 0},
+    boundary.top: {'un': 0},
 }
 
 temp_bcs = {
-    bottom_id: {'T': 1.0 - 930/3700.},  # Take out adiabat
-    top_id: {'T': 0.0},
+    boundary.bottom: {'T': 1.0 - 930/3700.},  # Take out adiabat
+    boundary.top: {'T': 0.0},
 }
 # -
 
@@ -194,7 +194,7 @@ output_frequency = 10
 plog = ParameterLog("params.log", mesh)
 plog.log_str("timestep time dt u_rms nu_base nu_top energy avg_t FullT_min FullT_max")
 
-gd = GeodynamicalDiagnostics(z, FullT, bottom_id, top_id, quad_degree=6)
+gd = GeodynamicalDiagnostics(z, FullT, boundary.bottom, boundary.top, quad_degree=6)
 # -
 
 # We can now setup and solve the variational problem, for both the energy and Stokes equations,

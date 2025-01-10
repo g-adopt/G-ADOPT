@@ -41,7 +41,7 @@ dz = D / nz
 surface_mesh = CircleManifoldMesh(ncells, radius=rmin, degree=2, name='surface_mesh')
 mesh = ExtrudedMesh(surface_mesh, layers=nz, layer_height=dz, extrusion_type='radial')
 
-bottom_id, top_id = "bottom", "top"
+boundary = get_boundary_ids(mesh)
 mesh.cartesian = False
 # -
 
@@ -410,8 +410,8 @@ log(f"Simulation start time: {Tstart} years")
 
 # Setup boundary conditions
 exterior_density = rho_ice * (disc1+disc2)
-stokes_bcs = {top_id: {'normal_stress': ice_load, 'free_surface': {'delta_rho_fs': density - exterior_density}},
-              bottom_id: {'un': 0}
+stokes_bcs = {boundary.top: {'normal_stress': ice_load, 'free_surface': {'delta_rho_fs': density - exterior_density}},
+              boundary.bottom: {'un': 0}
               }
 
 
@@ -464,7 +464,7 @@ plog.log_str(
 
 checkpoint_filename = "viscoelastic_loading-chk.h5"
 
-gd = GeodynamicalDiagnostics(z, density, bottom_id, top_id)
+gd = GeodynamicalDiagnostics(z, density, boundary.bottom, boundary.top)
 
 # Initialise a (scalar!) function for logging vertical displacement
 U = FunctionSpace(mesh, "CG", 2)  # (Incremental) Displacement function space (scalar)
@@ -499,7 +499,7 @@ for timestep in range(max_timesteps+1):
     # Log diagnostics:
     plog.log_str(
         f"{timestep} {float(time)} {float(dt)} "
-        f"{gd.u_rms()} {gd.u_rms_top()} {gd.ux_max(top_id)} "
+        f"{gd.u_rms()} {gd.u_rms_top()} {gd.ux_max(boundary.top)} "
         f"{vertical_displacement.dat.data.min()} "
         f"{vertical_displacement.dat.data.max()} "
     )

@@ -44,7 +44,7 @@ class TopBottomImplicitFreeSurfaceModel(ImplicitFreeSurfaceModel):
         # This is not ideal - python dictionaries are ordered by insertion only since recently (since 3.7) - so relying on
         # their order is fraught and not considered pythonic. At the moment let's consider having more than one free surface
         # a bit of a niche case for now, and leave it as is...
-        self.stokes_bcs[self.bottom_id] = {"free_surface": {"RaFS": -1}}
+        self.stokes_bcs[self.boundary.bottom] = {"free_surface": {"RaFS": -1}}
 
     def update_analytical_free_surfaces(self):
         super().update_analytical_free_surfaces()
@@ -54,7 +54,7 @@ class TopBottomImplicitFreeSurfaceModel(ImplicitFreeSurfaceModel):
 
     def calculate_error(self):
         super().calculate_error()
-        zeta_local_error = assemble(pow(self.stokes_vars[3]-self.zeta_analytical, 2)*self.ds(self.bottom_id))
+        zeta_local_error = assemble(pow(self.stokes_vars[3]-self.zeta_analytical, 2)*self.ds(self.boundary.bottom))
         self.zeta_error += zeta_local_error*self.dt
 
     def calculate_final_error(self):

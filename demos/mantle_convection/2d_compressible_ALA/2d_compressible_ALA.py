@@ -32,7 +32,7 @@ from gadopt import *
 nx, ny = 40, 40  # Number of cells in x and y directions.
 mesh = UnitSquareMesh(nx, ny, quadrilateral=True)  # Square mesh generated via firedrake
 mesh.cartesian = True
-left_id, right_id, bottom_id, top_id = 1, 2, 3, 4  # Boundary IDs
+boundary = get_boundary_ids(mesh)  # Boundary IDs
 
 V = VectorFunctionSpace(mesh, "CG", 2)  # Velocity function space (vector)
 W = FunctionSpace(mesh, "CG", 1)  # Pressure function space (scalar)
@@ -93,7 +93,7 @@ FullT = Function(Q, name="FullTemperature").assign(T+Tbar)
 
 Z_nullspace = create_stokes_nullspace(
     Z, closed=True, rotational=False,
-    ala_approximation=approximation, top_subdomain_id=top_id)
+    ala_approximation=approximation, top_subdomain_id=boundary.top)
 Z_nullspace_transpose = create_stokes_nullspace(
     Z, closed=True, rotational=False)
 
@@ -101,15 +101,15 @@ Z_nullspace_transpose = create_stokes_nullspace(
 
 # +
 stokes_bcs = {
-    bottom_id: {'uy': 0},
-    top_id: {'uy': 0},
-    left_id: {'ux': 0},
-    right_id: {'ux': 0},
+    boundary.bottom: {'uy': 0},
+    boundary.top: {'uy': 0},
+    boundary.left: {'ux': 0},
+    boundary.right: {'ux': 0},
 }
 
 temp_bcs = {
-    bottom_id: {'T': 1.0 - (T0*exp(Di) - T0)},
-    top_id: {'T': 0.0},
+    boundary.bottom: {'T': 1.0 - (T0*exp(Di) - T0)},
+    boundary.top: {'T': 0.0},
 }
 # -
 
@@ -127,7 +127,7 @@ plog.log_str(
     "timestep time dt maxchange u_rms u_rms_surf ux_max nu_base "
     "nu_top energy avg_t rate_work_g rate_viscous energy_2")
 
-gd = GeodynamicalDiagnostics(z, FullT, bottom_id, top_id)
+gd = GeodynamicalDiagnostics(z, FullT, boundary.bottom, boundary.top)
 
 # -
 
@@ -172,7 +172,7 @@ for timestep in range(0, timesteps):
 
     # Log diagnostics:
     plog.log_str(f"{timestep} {time} {float(delta_t)} {maxchange} "
-                 f"{gd.u_rms()} {gd.u_rms_top()} {gd.ux_max(top_id)} {gd.Nu_bottom()} "
+                 f"{gd.u_rms()} {gd.u_rms_top()} {gd.ux_max(boundary.top)} {gd.Nu_bottom()} "
                  f"{gd.Nu_top()} {energy_conservation} {gd.T_avg()} "
                  f"{rate_work_against_gravity} {rate_viscous_dissipation} "
                  f"{energy_conservation_2}")
@@ -214,4 +214,3 @@ with CheckpointFile("Final_State.h5", "w") as final_checkpoint:
 # fig, axes = plt.subplots()
 # collection = tripcolor(FullT, axes=axes, cmap='coolwarm')
 # fig.colorbar(collection);
-# -

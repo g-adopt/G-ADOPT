@@ -20,7 +20,7 @@ from gadopt.inverse import *
 # +
 mesh = UnitSquareMesh(40, 40)
 mesh.cartesian = True
-left, right, bottom, top = 1, 2, 3, 4  # Boundary IDs
+boundary = get_boundary_ids(mesh)
 
 V = VectorFunctionSpace(mesh, "CG", 2)
 Q = FunctionSpace(mesh, "CG", 1)
@@ -136,13 +136,13 @@ T.project(T0)
 with CheckpointFile("Model_State.h5", "r") as model_checkpoint:
     for timestep in range(num_timesteps):
         T_target = model_checkpoint.load_function(mesh, 'Temperature', idx=timestep)
-        J = J + factor * assemble((T-T_target)**2*ds(left))
+        J = J + factor * assemble((T-T_target)**2*ds(boundary.left))
         factor = 1.0  # Remaining timesteps weighted by 1
         energy_solver.solve()
 
     T_target = model_checkpoint.load_function(mesh, 'Temperature', idx=timestep)
     # Add final contribution weighted again by 0.5
-    J = J + factor * assemble((T-T_target)**2*ds(left))
+    J = J + factor * assemble((T-T_target)**2*ds(boundary.left))
 
 print(J)
 # -

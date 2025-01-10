@@ -39,7 +39,7 @@ def rectangle_taylor_test(case):
 
     # Specify boundary markers, noting that for extruded meshes upper and lower boundaries are
     # tagged as "top" and "bottom" respectively.
-    bottom_id, top_id, left_id, right_id = "bottom", "top", 1, 2
+    boundary = get_boundary_ids(mesh)
 
     # Retrieve timestepping information for the Velocity and Temperature functions from checkpoint file:
     with CheckpointFile(str(checkpoint_filename), "r") as f:
@@ -76,14 +76,14 @@ def rectangle_taylor_test(case):
     # Followed by boundary conditions, noting that all boundaries are free slip, whilst the domain is
     # heated from below (T = 1) and cooled from above (T = 0).
     stokes_bcs = {
-        bottom_id: {"uy": 0},
-        top_id: {"uy": 0},
-        left_id: {"ux": 0},
-        right_id: {"ux": 0},
+        boundary.bottom: {"uy": 0},
+        boundary.top: {"uy": 0},
+        boundary.left: {"ux": 0},
+        boundary.right: {"ux": 0},
     }
     temp_bcs = {
-        bottom_id: {"T": 1.0},
-        top_id: {"T": 0.0},
+        boundary.bottom: {"T": 1.0},
+        boundary.top: {"T": 0.0},
     }
 
     # Setup Energy and Stokes solver
@@ -107,7 +107,7 @@ def rectangle_taylor_test(case):
     # Given Tic is updated during the optimisation, we also create a function to store our initial guess,
     # which we will later use for smoothing. Since smoothing is executed in the control space, we must
     # specify boundary conditions on this term in that same Q1 space.
-    T0_bcs = [DirichletBC(Q1, 0., top_id), DirichletBC(Q1, 1., bottom_id)]
+    T0_bcs = [DirichletBC(Q1, 0., boundary.top), DirichletBC(Q1, 1., boundary.bottom)]
     T0 = Function(Q1, name="Initial_Guess_Temperature").project(Tic, bcs=T0_bcs)
 
     # We next make pyadjoint aware of our control problem:

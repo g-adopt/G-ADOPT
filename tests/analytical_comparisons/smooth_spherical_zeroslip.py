@@ -36,7 +36,7 @@ def model(level, l, mm, k, do_write=False):
     mesh2d = CubedSphereMesh(radius=rmin, refinement_level=level, degree=2)
     mesh = ExtrudedMesh(mesh2d, layers=nlayers, extrusion_type="radial")
     mesh.cartesian = False
-    bottom_id, top_id = "bottom", "top"
+    boundary = get_boundary_ids(mesh)
 
     # Define geometric quantities
     X = SpatialCoordinate(mesh)
@@ -67,8 +67,8 @@ def model(level, l, mm, k, do_write=False):
 
     approximation = BoussinesqApproximation(1)
     stokes_bcs = {
-        bottom_id: {'u': 0},
-        top_id: {'u': 0},
+        boundary.bottom: {'u': 0},
+        boundary.top: {'u': 0},
     }
 
     # Nullspaces and near-nullspaces:

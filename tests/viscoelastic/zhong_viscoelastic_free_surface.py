@@ -40,7 +40,7 @@ def viscoelastic_model(nx=80, dt_factor=0.1, sim_time="long", shear_modulus=1e11
     Vc = mesh.coordinates.function_space()
     f = Function(Vc).interpolate(as_vector([x, depth_c*z_scaled + (D - depth_c)*Cs]))
     mesh.coordinates.assign(f)
-    left_id, right_id, bottom_id, top_id = 1, 2, 3, 4  # Boundary IDs
+    boundary = get_boundary_ids(mesh)
 
     # Set up function spaces - currently using P2P1 element pair:
     V = VectorFunctionSpace(mesh, "CG", 2)  # Displacement function space (vector)
@@ -105,10 +105,10 @@ def viscoelastic_model(nx=80, dt_factor=0.1, sim_time="long", shear_modulus=1e11
 
     # Setup boundary conditions
     stokes_bcs = {
-        bottom_id: {'uy': 0},
-        top_id: {'normal_stress': rho0*g*eta, 'free_surface': {"delta_rho_fs": rho0}},
-        left_id: {'ux': 0},
-        right_id: {'ux': 0},
+        boundary.bottom: {'uy': 0},
+        boundary.top: {'normal_stress': rho0*g*eta, 'free_surface': {"delta_rho_fs": rho0}},
+        boundary.left: {'ux': 0},
+        boundary.right: {'ux': 0},
     }
 
     # Setup analytical solution for the free surface from Cathles et al. 2024
@@ -135,7 +135,7 @@ def viscoelastic_model(nx=80, dt_factor=0.1, sim_time="long", shear_modulus=1e11
         eta_analytical.interpolate(((F0 - h_elastic) * (1-exp(-(time)/(tau0+maxwell_time)))+h_elastic) * cos(kk * X[0]))
 
         # Calculate error
-        local_error = assemble(pow(displacement[1]-eta_analytical, 2)*ds(top_id))
+        local_error = assemble(pow(displacement[1]-eta_analytical, 2)*ds(boundary.top))
         error += local_error * float(dt)
 
         # Write output:

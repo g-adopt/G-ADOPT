@@ -83,7 +83,7 @@ gmsh.finalize()
 mesh = Mesh(mesh_file)  # Load the GMSH mesh using Firedrake
 mesh.cartesian = True
 
-left_id, right_id, bottom_id, top_id = 1, 2, 3, 4  # Boundary IDs
+boundary = get_boundary_ids(mesh)
 
 V = VectorFunctionSpace(mesh, "CG", 2)  # Velocity function space (vector)
 W = FunctionSpace(mesh, "CG", 1)  # Pressure function space (scalar)
@@ -198,12 +198,12 @@ Z_nullspace = create_stokes_nullspace(Z)
 # numerical domain is closed.
 
 stokes_bcs = {
-    bottom_id: {"uy": 0},
-    top_id: {"uy": 0},
-    left_id: {"ux": 0},
-    right_id: {"ux": 0},
+    boundary.bottom: {"uy": 0},
+    boundary.top: {"uy": 0},
+    boundary.left: {"ux": 0},
+    boundary.right: {"ux": 0},
 }
-temp_bcs = {bottom_id: {"T": 1}, top_id: {"T": 0}}
+temp_bcs = {boundary.bottom: {"T": 1}, boundary.top: {"T": 0}}
 
 # We move on to initialising the temperature field.
 
@@ -225,8 +225,8 @@ Ts = 1 / 2 - Q_ic / 2 / sqrt(pi) * sqrt(v0 / (2 - X[1])) * exp(
 
 # Interpolate temperature initial condition and ensure boundary condition values
 T.interpolate(max_value(min_value(Tu + Tl + Tr + Ts - 3 / 2, 1), 0))
-DirichletBC(Q, 1, bottom_id).apply(T)
-DirichletBC(Q, 0, top_id).apply(T)
+DirichletBC(Q, 1, boundary.bottom).apply(T)
+DirichletBC(Q, 0, boundary.top).apply(T)
 # -
 
 # We now set up our output. To do so, we create the output file as a ParaView Data file
@@ -240,7 +240,7 @@ output_file = VTKFile("output.pvd")
 plog = ParameterLog("params.log", mesh)
 plog.log_str("step time dt u_rms entrainment")
 
-gd = GeodynamicalDiagnostics(z, T, bottom_id, top_id)
+gd = GeodynamicalDiagnostics(z, T, boundary.bottom, boundary.top)
 
 material_area = material_interface_y * lx  # Area of tracked material in the domain
 entrainment_height = 0.2  # Height above which entrainment diagnostic is calculated

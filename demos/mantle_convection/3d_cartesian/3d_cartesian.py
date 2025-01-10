@@ -43,7 +43,7 @@ nx, ny, nz = 10, int(b/c * 10), 10
 mesh2d = RectangleMesh(nx, ny, a, b, quadrilateral=True)  # Rectangular 2D mesh
 mesh = ExtrudedMesh(mesh2d, nz)
 mesh.cartesian = True
-bottom_id, top_id, left_id, right_id, front_id, back_id = "bottom", "top", 1, 2, 3, 4
+boundary = get_boundary_ids(mesh)
 
 V = VectorFunctionSpace(mesh, "CG", 2)  # Velocity function space (vector)
 W = FunctionSpace(mesh, "CG", 1)  # Pressure function space (scalar)
@@ -55,7 +55,6 @@ u, p = split(z)  # Returns symbolic UFL expression for u and p
 z.subfunctions[0].rename("Velocity")
 z.subfunctions[1].rename("Pressure")
 # -
-
 # We can output function space information, for example the number of degrees
 # of freedom (DOF) using log, a utility provided by G-ADOPT.
 
@@ -121,17 +120,17 @@ Z_near_nullspace = create_stokes_nullspace(Z, closed=False, rotational=True, tra
 
 # +
 stokes_bcs = {
-    bottom_id: {'u': 0},
-    top_id: {'u': 0},
-    left_id: {'ux': 0},
-    right_id: {'ux': 0},
-    front_id: {'uy': 0},
-    back_id: {'uy': 0},
+    boundary.bottom: {'u': 0},
+    boundary.top: {'u': 0},
+    boundary.left: {'ux': 0},
+    boundary.right: {'ux': 0},
+    boundary.front: {'uy': 0},
+    boundary.back: {'uy': 0},
 }
 
 temp_bcs = {
-    bottom_id: {'T': 1.0},
-    top_id: {'T': 0.0},
+    boundary.bottom: {'T': 1.0},
+    boundary.top: {'T': 0.0},
 }
 # -
 
@@ -147,7 +146,7 @@ output_frequency = 50
 plog = ParameterLog('params.log', mesh)
 plog.log_str("timestep time dt maxchange u_rms u_rms_surf ux_max nu_top nu_base energy avg_t")
 
-gd = GeodynamicalDiagnostics(z, T, bottom_id, top_id)
+gd = GeodynamicalDiagnostics(z, T, boundary.bottom, boundary.top)
 # -
 
 # We can now setup and solve the variational problem, for both the energy and Stokes equations,
@@ -194,7 +193,7 @@ for timestep in range(0, timesteps):
 
     # Log diagnostics:
     plog.log_str(f"{timestep} {time} {float(delta_t)} {maxchange} "
-                 f"{gd.u_rms()} {gd.u_rms_top()} {gd.ux_max(top_id)} {gd.Nu_top()} "
+                 f"{gd.u_rms()} {gd.u_rms_top()} {gd.ux_max(boundary.top)} {gd.Nu_top()} "
                  f"{gd.Nu_bottom()} {energy_conservation} {gd.T_avg()} ")
 
     # Leave if steady-state has been achieved:
@@ -213,4 +212,3 @@ with CheckpointFile("Final_State.h5", "w") as final_checkpoint:
     final_checkpoint.save_mesh(mesh)
     final_checkpoint.save_function(T, name="Temperature")
     final_checkpoint.save_function(z, name="Stokes")
-# -

@@ -33,7 +33,7 @@ def spiegelman(U0, mu1, nx, ny, picard_iterations, stabilisation=False):
     log('WRITING TO:', output_dir)
     mesh = RectangleMesh(nx, ny, 4, 1, quadrilateral=True)  # Square mesh generated via firedrake
     mesh.cartesian = True
-    left_id, right_id, bottom_id, top_id = 1, 2, 3, 4  # noqa: F841 Boundary IDs
+    boundary = get_boundary_ids(mesh)
 
     # Set up function spaces - currently using the bilinear Q2Q1 element pair:
     V = VectorFunctionSpace(mesh, "CG", 2)  # Velocity function space (vector)
@@ -203,7 +203,7 @@ def spiegelman(U0, mu1, nx, ny, picard_iterations, stabilisation=False):
     T = 0
     approximation_nl = BoussinesqApproximation(0, mu=mu_nl)
     approximation = BoussinesqApproximation(0, mu=mu)
-    bcs = {left_id: {'ux': 1}, right_id: {'ux': -1}, bottom_id: {'uy': 0}}
+    bcs = {boundary.left: {'ux': 1}, boundary.right: {'ux': -1}, boundary.bottom: {'uy': 0}}
     picard_solver = StokesSolver(z, T, approximation_nl, bcs=bcs,
                                  solver_parameters=initial_picard_solver_parameters)
     newton_solver = StokesSolver(z, T, approximation, bcs=bcs,

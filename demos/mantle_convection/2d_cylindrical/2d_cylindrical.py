@@ -41,7 +41,7 @@ rmin, rmax, ncells, nlayers = 1.22, 2.22, 128, 32
 mesh1d = CircleManifoldMesh(ncells, radius=rmin, degree=2)  # construct a circle mesh
 mesh = ExtrudedMesh(mesh1d, layers=nlayers, extrusion_type='radial')  # extrude into a cylinder
 mesh.cartesian = False
-bottom_id, top_id = "bottom", "top"
+boundary = get_boundary_ids(mesh)
 
 V = VectorFunctionSpace(mesh, "CG", 2)  # Velocity function space (vector)
 W = FunctionSpace(mesh, "CG", 1)  # Pressure function space (scalar)
@@ -131,13 +131,13 @@ Z_near_nullspace = create_stokes_nullspace(Z, closed=False, rotational=True, tra
 
 # +
 stokes_bcs = {
-    bottom_id: {'un': 0},
-    top_id: {'un': 0},
+    boundary.bottom: {'un': 0},
+    boundary.top: {'un': 0},
 }
 
 temp_bcs = {
-    bottom_id: {'T': 1.0},
-    top_id: {'T': 0.0},
+    boundary.bottom: {'T': 1.0},
+    boundary.top: {'T': 0.0},
 }
 # -
 
@@ -152,7 +152,7 @@ output_frequency = 50
 plog = ParameterLog('params.log', mesh)
 plog.log_str("timestep time dt maxchange u_rms nu_base nu_top energy avg_t T_min T_max")
 
-gd = GeodynamicalDiagnostics(z, T, bottom_id, top_id, quad_degree=6)
+gd = GeodynamicalDiagnostics(z, T, boundary.bottom, boundary.top, quad_degree=6)
 # -
 
 # We can now setup and solve the variational problem, for both the energy and Stokes equations,

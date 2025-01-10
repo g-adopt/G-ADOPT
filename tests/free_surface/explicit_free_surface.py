@@ -81,8 +81,8 @@ class ExplicitFreeSurfaceModel:
         self.L = self.D  # Length of the domain in m
         self.L0 = self.D  # characteristic length scale for scaling the equations
         ny = self.nx
-        self.left_id, self.right_id, self.bottom_id, self.top_id = 1, 2, 3, 4  # Boundary IDs
         self.mesh = RectangleMesh(self.nx, ny, self.L/self.L0, self.D/self.L0)  # Rectangle mesh generated via firedrake
+        self.boundary = get_boundary_ids(self.mesh)
         self.ds = ds  # Need this so that cylindrical case can overload this later with CombinedSurfaceMeasure
 
     def setup_function_space(self):
@@ -118,10 +118,10 @@ class ExplicitFreeSurfaceModel:
     def setup_bcs(self):
         # No normal flow except on the free surface
         self.stokes_bcs = {
-            self.top_id: {'normal_stress': self.rho0 * self.g * self.eta},  # Apply stress on free surface
-            self.bottom_id: {'un': 0},
-            self.left_id: {'un': 0},
-            self.right_id: {'un': 0},
+            self.boundary.top: {'normal_stress': self.rho0 * self.g * self.eta},  # Apply stress on free surface
+            self.boundary.bottom: {'un': 0},
+            self.boundary.left: {'un': 0},
+            self.boundary.right: {'un': 0},
         }
 
     def setup_nullspaces(self):
@@ -134,7 +134,7 @@ class ExplicitFreeSurfaceModel:
         self.stokes_solver = StokesSolver(self.z, self.T, self.approximation, bcs=self.stokes_bcs)
 
         eq_attrs = {
-            "boundary_id": self.top_id,
+            "boundary_id": self.boundary.top,
             "buoyancy_scale": 1,
             "u": self.stokes_vars[0],
         }
@@ -149,7 +149,7 @@ class ExplicitFreeSurfaceModel:
         )  # Initialise the separate free surface equation for explicit coupling
         eta_bcs = {}
         # Apply strong homogenous boundary to interior DOFs to prevent a singular matrix when only integrating the free surface equation over the top surface.
-        eta_strong_bcs = [InteriorBC(self.W, 0., self.top_id)]
+        eta_strong_bcs = [InteriorBC(self.W, 0., self.boundary.top)]
 
         # Set up a timestepper for the free surface, here we use a first order backward Euler method following Kramer et al. 2012
         self.eta_timestepper = BackwardEuler(
@@ -162,7 +162,7 @@ class ExplicitFreeSurfaceModel:
         self.eta_analytical.interpolate(exp(-self.time/self.tau0)*self.F0 * cos(self.kk * self.X[0]))
 
     def calculate_error(self):
-        local_error = assemble(pow(self.eta-self.eta_analytical, 2)*self.ds(self.top_id))
+        local_error = assemble(pow(self.eta-self.eta_analytical, 2)*self.ds(self.boundary.top))
         self.error += local_error*self.dt
 
     def calculate_final_error(self):

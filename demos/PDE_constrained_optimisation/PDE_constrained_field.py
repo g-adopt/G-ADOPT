@@ -30,7 +30,6 @@ from gadopt.inverse import *
 # +
 mesh = UnitSquareMesh(40, 40)
 mesh.cartesian = True
-left, right, bottom, top = 1, 2, 3, 4  # Boundary IDs.
 
 V = VectorFunctionSpace(mesh, "CG", 2)  # Function space for velocity.
 Q = FunctionSpace(mesh, "CG", 1)  # Function space for the scalar (Temperature).

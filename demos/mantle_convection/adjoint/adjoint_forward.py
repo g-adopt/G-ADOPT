@@ -24,7 +24,7 @@ mesh = ExtrudedMesh(
     mesh1d, layers=disc_n, layer_height=y_max / disc_n, extrusion_type="uniform"
 )
 mesh.cartesian = True
-bottom_id, top_id, left_id, right_id = "bottom", "top", 1, 2
+boundary = get_boundary_ids(mesh)
 
 # Defining Function Spaces
 # ------------------------
@@ -110,14 +110,14 @@ timesteps = 80
 
 # +
 stokes_bcs = {
-    bottom_id: {"uy": 0},
-    top_id: {"uy": 0},
-    left_id: {"ux": 0},
-    right_id: {"ux": 0},
+    boundary.bottom: {"uy": 0},
+    boundary.top: {"uy": 0},
+    boundary.left: {"ux": 0},
+    boundary.right: {"ux": 0},
 }
 temp_bcs = {
-    bottom_id: {"T": 1.0},
-    top_id: {"T": 0.0},
+    boundary.bottom: {"T": 1.0},
+    boundary.top: {"T": 0.0},
 }
 
 Z_nullspace = create_stokes_nullspace(Z, closed=True, rotational=False)

@@ -224,9 +224,10 @@ from gadopt.utility import step_func
 # Firedrake. By contrast, a non-Cartesian geometry is assumed to have gravity
 # pointing in the radially inward direction.
 #
-# Boundaries are automatically tagged by the built-in meshes supported by Firedrake. For the `RectangleMesh` being used here, tag 1
-# corresponds to the plane $x=0$; 2 to the $x=L$ plane; 3 to the $y=0$ plane; and 4 to the $y=D$ plane. For convenience, we can
-# rename these to `left_id`, `right_id`, `bottom_id` and `top_id`.
+
+# Boundaries are automatically tagged by the built-in meshes supported by Firedrake. For the `RectangleMesh` being used here, tag 1 corresponds
+# to the plane $x=0$; 2 to the $x=L$ plane; 3 to the $y=0$ plane; and 4 to the $y=D$ plane. The `get_boundary_ids` function will inspect the mesh
+# to detect this and allow the boundaries to be referred to more intuitively (e.g. `boundary.left`, `boundary.top`, etc.).
 
 # +
 # Set up geometry:
@@ -242,7 +243,7 @@ log(f"Vertical resolution {D/nz/1000} km")
 mesh = RectangleMesh(nx, nz, L, D, name="mesh", quadrilateral=True)
 mesh.cartesian = True
 
-left_id, right_id, bottom_id, top_id = 1, 2, 3, 4  # Boundary IDs
+boundary = get_boundary_ids(mesh)
 # -
 # We now need to choose finite element function spaces. `V` , `W`, `S` and `R` are symbolic
 # variables representing function spaces. They also contain the
@@ -411,13 +412,13 @@ ice_load = ramp * rho_ice * g * Hice * disc
 # Setup boundary conditions
 exterior_density = conditional(time < t2_load, rho_ice*disc, 0)
 stokes_bcs = {
-    bottom_id: {'uy': 0},
-    top_id: {'normal_stress': ice_load, 'free_surface': {'delta_rho_fs': density - exterior_density}},
-    1: {'ux': 0},
-    2: {'ux': 0},
+    boundary.bottom: {'uy': 0},
+    boundary.top: {'normal_stress': ice_load, 'free_surface': {'delta_rho_fs': density - exterior_density}},
+    boundary.left: {'ux': 0},
+    boundary.right: {'ux': 0},
 }
 
-gd = GeodynamicalDiagnostics(z, density, bottom_id, top_id)
+gd = GeodynamicalDiagnostics(z, density, boundary.bottom, boundary.top)
 # -
 
 
@@ -473,7 +474,7 @@ for timestep in range(max_timesteps):
     # Log diagnostics:
     plog.log_str(
         f"{timestep} {float(time)} {float(dt)} "
-        f"{gd.u_rms()} {gd.u_rms_top()} {gd.ux_max(top_id)} "
+        f"{gd.u_rms()} {gd.u_rms_top()} {gd.ux_max(boundary.top)} "
         f"{displacement.dat.data[:, 1].min()} {displacement.dat.data[:, 1].max()}"
     )
 

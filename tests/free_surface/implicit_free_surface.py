@@ -37,10 +37,10 @@ class ImplicitFreeSurfaceModel(ExplicitFreeSurfaceModel):
     def setup_bcs(self):
         # No normal flow except on the free surface
         self.stokes_bcs = {
-            self.top_id: {'free_surface': {}},  # Free surface boundary conditions are applied automatically in stokes_integrators and momentum_equation for implicit free surface coupling
-            self.bottom_id: {'un': 0},
-            self.left_id: {'un': 0},
-            self.right_id: {'un': 0},
+            self.boundary.top: {'free_surface': {}},  # Free surface boundary conditions are applied automatically in stokes_integrators and momentum_equation for implicit free surface coupling
+            self.boundary.bottom: {'un': 0},
+            self.boundary.left: {'un': 0},
+            self.boundary.right: {'un': 0},
         }
 
     def setup_solver(self):
@@ -49,7 +49,7 @@ class ImplicitFreeSurfaceModel(ExplicitFreeSurfaceModel):
                                           transpose_nullspace=self.Z_nullspace, near_nullspace=self.Z_near_nullspace)
 
     def calculate_error(self):
-        local_error = assemble(pow(self.stokes_vars[2]-self.eta_analytical, 2)*self.ds(self.top_id))
+        local_error = assemble(pow(self.stokes_vars[2]-self.eta_analytical, 2)*self.ds(self.boundary.top))
         self.error += local_error*self.dt
 
     def write_file(self):

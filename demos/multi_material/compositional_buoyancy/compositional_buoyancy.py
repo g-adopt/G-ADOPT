@@ -67,7 +67,7 @@ lx, ly = 0.9142, 1  # Domain dimensions in x and y directions
 # Rectangle mesh generated via Firedrake
 mesh = RectangleMesh(nx, ny, lx, ly, quadrilateral=True)
 mesh.cartesian = True
-left_id, right_id, bottom_id, top_id = 1, 2, 3, 4  # Boundary IDs
+boundary = get_boundary_ids(mesh)
 
 V = VectorFunctionSpace(mesh, "CG", 2)  # Velocity function space (vector)
 W = FunctionSpace(mesh, "CG", 1)  # Pressure function space (scalar)
@@ -184,10 +184,10 @@ Z_nullspace = create_stokes_nullspace(Z)
 # numerical domain is closed.
 
 stokes_bcs = {
-    bottom_id: {"u": 0},
-    top_id: {"u": 0},
-    left_id: {"ux": 0},
-    right_id: {"ux": 0},
+    boundary.bottom: {"u": 0},
+    boundary.top: {"u": 0},
+    boundary.left: {"ux": 0},
+    boundary.right: {"ux": 0},
 }
 
 # We now set up our output. To do so, we create the output file as a ParaView Data file
@@ -201,7 +201,7 @@ output_file = VTKFile("output.pvd")
 plog = ParameterLog("params.log", mesh)
 plog.log_str("step time dt u_rms entrainment")
 
-gd = GeodynamicalDiagnostics(z, T, bottom_id, top_id)
+gd = GeodynamicalDiagnostics(z, T, boundary.bottom, boundary.top)
 
 material_area = material_interface_y * lx  # Area of tracked material in the domain
 entrainment_height = 0.2  # Height above which entrainment diagnostic is calculated

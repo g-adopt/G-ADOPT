@@ -57,7 +57,7 @@ def model(level, k, nn, do_write=False):
     mesh1d = CircleManifoldMesh(ncells, radius=rmin, degree=2)
     mesh = ExtrudedMesh(mesh1d, layers=nlayers, extrusion_type="radial")
     mesh.cartesian = False
-    bottom_id, top_id = "bottom", "top"
+    boundary = get_boundary_ids(mesh)
 
     # Define geometric quantities
     X = SpatialCoordinate(mesh)
@@ -92,9 +92,9 @@ def model(level, k, nn, do_write=False):
     # occur in the Assess steady state solution
     approximation = BoussinesqApproximation(1)
     stokes_bcs = {
-        bottom_id: {"un": 0},
+        boundary.bottom: {"un": 0},
         # Apply the free surface boundary condition
-        top_id: {"free_surface": {"variable_rho_fs": False}},
+        boundary.top: {"free_surface": {"variable_rho_fs": False}},
     }
 
     rho0 = approximation.rho
