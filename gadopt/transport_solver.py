@@ -238,12 +238,14 @@ class GenericTransportBase(abc.ABC):
         """Optional instructions to execute right after a solve."""
         pass
 
-    def solve(self, t: Number = 0, update_forcings: Callable | None = None) -> None:
+    def solve(
+        self, update_forcings: Callable | None = None, t: float | None = None
+    ) -> None:
         """Advances solver in time."""
         if not self._solver_ready:
             self.setup_solver()
 
-        self.ts.advance(t, update_forcings)
+        self.ts.advance(update_forcings, t)
 
         self.solver_callback()
 
@@ -254,16 +256,15 @@ class GenericTransportSolver(GenericTransportBase):
     **Note**: The solution field is updated in place.
 
     Terms and Attributes:
-        This solver handles all combinations of advection, diffusion, sink, and source
-        terms. Depending on the included terms, specific attributes must be provided
-        according to:
-
-        |   Term    | Required attribute(s) |           Optional attribute(s)           |
-        | --------- | --------------------- | ----------------------------------------- |
-        | advection | u                     | advective_velocity_scaling, su_nubar      |
-        | diffusion | diffusivity           | reference_for_diffusion, interior_penalty |
-        | source    | source                |                                           |
-        | sink      | sink_coeff            |                                           |
+      This solver handles all combinations of advection, diffusion, sink, and source
+      terms. Depending on the included terms, specific attributes must be provided
+      according to:
+      |   Term    | Required attribute(s) |           Optional attribute(s)           |
+      | --------- | --------------------- | ----------------------------------------- |
+      | advection | u                     | advective_velocity_scaling, su_nubar      |
+      | diffusion | diffusivity           | reference_for_diffusion, interior_penalty |
+      | source    | source                |                                           |
+      | sink      | sink_coeff            |                                           |
 
     Args:
       terms:

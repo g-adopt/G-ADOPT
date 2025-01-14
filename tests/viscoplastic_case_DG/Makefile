@@ -11,4 +11,4 @@ clean:
 	rm -rf output __pycache__
 
 check: params.log
-	python3 -m pytest ../../demos/test_all.py -k "../tests/viscoplastic_case_dg"
+	python3 -m pytest ../../demos/test_all.py -k "../tests/viscoplastic_case_DG"

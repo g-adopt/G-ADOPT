@@ -147,13 +147,12 @@ class ExplicitFreeSurfaceModel:
             mass_term=mass_term,
             eq_attrs=eq_attrs,
         )  # Initialise the separate free surface equation for explicit coupling
-        eta_bcs = {}
         # Apply strong homogenous boundary to interior DOFs to prevent a singular matrix when only integrating the free surface equation over the top surface.
         eta_strong_bcs = [InteriorBC(self.W, 0., self.top_id)]
 
         # Set up a timestepper for the free surface, here we use a first order backward Euler method following Kramer et al. 2012
         self.eta_timestepper = BackwardEuler(
-            eta_eq, self.eta, self.dt, bnd_conditions=eta_bcs, strong_bcs=eta_strong_bcs
+            eta_eq, self.eta, self.dt, strong_bcs=eta_strong_bcs
         )
 
     def update_analytical_free_surfaces(self):
@@ -177,7 +176,7 @@ class ExplicitFreeSurfaceModel:
     def advance_timestep(self):
         # Solve Stokes sytem:
         self.stokes_solver.solve()
-        self.eta_timestepper.advance(self.time)
+        self.eta_timestepper.advance()
 
     def run_simulation(self):
         # Now perform the time loop:

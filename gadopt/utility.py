@@ -450,14 +450,18 @@ def step_func(r, centre, mag, increasing=True, sharpness=50):
     )
 
 
-def node_coordinates(function):
-    """Extract mesh coordinates and interpolate them onto the relevant function space"""
-    func_space = function.function_space()
-    mesh_coords = SpatialCoordinate(func_space.mesh())
+def node_coordinates(function: Function) -> np.ndarray:
+    """Interpolates mesh coordinates at each node of the provided function
 
-    return [
-        Function(func_space).interpolate(coords).dat.data for coords in mesh_coords
-    ]
+    Args:
+      function: A Firedrake function
+
+    Returns:
+      A NumPy array holding the interpolated mesh coordinates
+    """
+    vec_space = VectorFunctionSpace(function.ufl_domain(), function.ufl_element())
+
+    return Function(vec_space).interpolate(SpatialCoordinate(function)).dat.data
 
 
 def interpolate_1d_profile(function: Function, one_d_filename: str):

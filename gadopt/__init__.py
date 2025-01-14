@@ -11,10 +11,11 @@ from .approximations import (
 from .diagnostics import GeodynamicalDiagnostics
 from .level_set_tools import (
     LevelSetSolver,
-    Material,
-    density_RaB,
+    conservative_level_set,
     entrainment,
-    field_interface,
+    interface_thickness,
+    material_field,
+    signed_distance,
 )
 from .limiter import VertexBasedP1DGLimiter
 from .preconditioners import FreeSurfaceMassInvPC, SPDAssembledPC
