@@ -97,7 +97,9 @@ def model(ref_level, nlayers, delta_t, steps=None):
         time += dt
 
         # Solve Stokes sytem:
-        with stokes_stage: stokes_solver.solve()
+        with stokes_stage:
+            stokes_solver.solve()
 
         # Temperature system:
-        with energy_stage: energy_solver.solve()
+        with energy_stage:
+            energy_solver.solve()

@@ -2,9 +2,9 @@
 
 lint:
 	@echo "Linting module code"
-	@python3 -m flake8 gadopt
+	@python3 -m ruff check gadopt
 	@echo "Linting demos and tests"
-	@python3 -m flake8 demos tests
+	@python3 -m ruff check demos tests
 
 test:
 	$(MAKE) -C demos & $(MAKE) -C tests & wait

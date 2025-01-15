@@ -1,0 +1,42 @@
+ci:
+    autofix_commit_msg: |
+        [pre-commit.ci] auto fixes from pre-commit.com hooks
+
+        for more information, see https://pre-commit.ci
+    autofix_prs: true
+    autoupdate_branch: ''
+    autoupdate_commit_msg: '[pre-commit.ci] pre-commit autoupdate'
+    autoupdate_schedule: weekly
+    skip: []
+    submodules: false
+
+repos:
+-   repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+    -   id: check-added-large-files
+    -   id: check-ast
+    -   id: check-builtin-literals
+    -   id: check-case-conflict
+    -   id: check-executables-have-shebangs
+    -   id: check-merge-conflict
+    # -   id: check-shebang-scripts-are-executable
+    -   id: check-toml
+    -   id: check-vcs-permalinks
+    -   id: check-yaml
+    -   id: debug-statements
+    -   id: destroyed-symlinks
+    # -   id: end-of-file-fixer
+    -   id: mixed-line-ending
+    # -   id: trailing-whitespace
+# -   repo: https://github.com/asottile/pyupgrade
+#     rev: v3.19.1
+#     hooks:
+#     -   id: pyupgrade
+-   repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.6
+    hooks:
+    -   id: ruff
+        types_or: [ python, pyi, jupyter ]
+    # -   id: ruff-format
+    #     types_or: [ python, pyi, jupyter ]

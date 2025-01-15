@@ -4,24 +4,36 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gadopt"
-authors = [
-  { name = "G-ADOPT Contributors" }
-]
+authors = [{ name = "G-ADOPT Contributors" }]
 description = "A computational platform for inverse geodynamics"
 dynamic = ["version"]
 readme = "README.md"
 classifiers = [
   "Programming Language :: Python :: 3",
   "License :: OSI Approved :: MIT License",
-  "Operating System :: OS Independent"
+  "Operating System :: OS Independent",
 ]
-dependencies = [
-  "vtk>=9.0.1",
-]
+dependencies = ["vtk>=9.0.1"]
 
 [project.optional-dependencies]
-demos = ["assess", "gmsh", "imageio", "jupytext", "openpyxl", "pandas", "pyvista", "shapely"]
+demos = [
+  "assess",
+  "gmsh",
+  "imageio",
+  "jupytext",
+  "openpyxl",
+  "pandas",
+  "pyvista",
+  "shapely",
+]
 optimisation = ["pyroltrilinos"]
+style = ["pre-commit", "ruff"]
+
+[tool.ruff.lint]
+# ambiguous-variable-name (E741)
+# undefined-local-with-import-star (F403)
+# undefined-local-with-import-star-usage (F405)
+ignore = ["E741", "F403", "F405"]
 
 [tool.setuptools]
 packages = ["gadopt"]
