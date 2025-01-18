@@ -11,7 +11,6 @@ from firedrake import op2, VectorElement, DirichletBC, utils
 from firedrake.__future__ import Interpolator
 from firedrake.ufl_expr import extract_unique_domain
 import ufl
-import finat.ufl
 import time
 from ufl.corealg.traversal import traverse_unique_terminals
 from firedrake.petsc import PETSc
@@ -145,6 +144,14 @@ class CombinedSurfaceMeasure(ufl.Measure):
 
 
 def _get_element(ufl_or_element):
+    if isinstance(ufl_or_element, ufl.indexed.Indexed):
+        expr, multiindex = ufl_or_element.ufl_operands
+        V = expr.ufl_function_space()
+        for i in multiindex:
+            comp_to_subspace = tuple(j for j, W in enumerate(V) for k in range(W.value_size))
+            V = V.sub(comp_to_subspace[int(i)])
+        ufl_or_element = V
+
     if isinstance(ufl_or_element, ufl.AbstractFiniteElement):
         return ufl_or_element
     else:
@@ -155,15 +162,7 @@ def is_continuous(expr):
     if isinstance(expr, ufl.tensors.ListTensor):
         return all(is_continuous(x) for x in expr.ufl_operands)
 
-    if isinstance(expr, ufl.indexed.Indexed):
-        elem = expr.ufl_operands[0].ufl_element()
-        if isinstance(elem, finat.ufl.MixedElement):
-            # the second operand is a MultiIndex
-            assert len(expr.ufl_operands[1]) == 1
-            sub_element_index, _ = elem.extract_subelement_component(int(expr.ufl_operands[1][0]))
-            elem = elem.sub_elements[sub_element_index]
-    else:
-        elem = _get_element(expr)
+    elem = _get_element(expr)
 
     return elem in ufl.H1
 
@@ -186,7 +185,7 @@ def normal_is_continuous(expr):
 
 def cell_size(mesh):
     if hasattr(mesh.ufl_cell(), 'sub_cells'):
-        return sqrt(CellVolume(mesh))
+        return CellVolume(mesh) ** (1/mesh.topological_dimension())
     else:
         return CellDiameter(mesh)
 

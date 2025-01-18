@@ -210,15 +210,19 @@ def spiegelman(U0, mu1, nx, ny, picard_iterations, stabilisation=False):
                                  solver_parameters=newton_solver_parameters)
 
     if stabilisation:
+        jac = derivative(newton_solver.F, z)
+        test, trial = jac.arguments()
         # need a trial function to express the Jacobian as a UFL 2-form:
-        u_trial, p_trial = TrialFunctions(Z)
+        u_trial, p_trial = split(trial)
         # the normal full Jacobian used in the Newton iteration is derivative(F_stokes_nl, z)
         # which returns a UFL 2-form where the perturbation is a trial function in Z
         # This already contains the deta/du = deta/deps deps/du term which we want to be able to switch off using alpha_SPD:
         #    alpha_SPD=0   deta/du not included
         #    alpha_SPD=1   full deta/du term included
         # Thus we simply subtract (1-alpha_SPD) times that term
-        jac = derivative(newton_solver.F, z) - (1-alpha_SPD) * inner(grad(v), 2*derivative(mu, u, u_trial)*sym(grad(u))) * dx
+        uvar = ufl.variable(u)
+        dmu_du = diff(replace(mu, {u: uvar}), uvar)
+        jac -= (1-alpha_SPD) * inner(2*dot(dmu_du, u_trial)*sym(grad(u)), grad(v)) * dx
         newton_solver.J = jac
 
     # switch off viscoplasticity in initial Picard solve as we start from u=0

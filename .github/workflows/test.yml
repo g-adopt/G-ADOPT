@@ -35,7 +35,7 @@ jobs:
     name: Benchmark regression test
     runs-on: self-hosted
     container:
-      image: ghcr.io/g-adopt/firedrake:2024-11-05
+      image: firedrakeproject/firedrake:latest
       options: --shm-size 2g
 
     concurrency:

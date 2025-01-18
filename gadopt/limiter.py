@@ -92,16 +92,15 @@ def get_facet_mask(
       AssertionError: The function space is not defined on an extruded mesh
 
     """
-    from tsfc.finatinterface import create_element as create_finat_element
 
     # get base element
     elem = get_extruded_base_element(function_space.ufl_element())
     assert isinstance(elem, TensorProductElement), \
         f'function space must be defined on an extruded 3D mesh: {elem}'
     # figure out number of nodes in sub elements
-    h_elt, v_elt = elem.sub_elements
-    nb_nodes_h = create_finat_element(h_elt).space_dimension()
-    nb_nodes_v = create_finat_element(v_elt).space_dimension()
+    h_elt, v_elt = function_space.finat_element.factors
+    nb_nodes_h = h_elt.space_dimension()
+    nb_nodes_v = v_elt.space_dimension()
     # compute top/bottom facet indices
     # extruded dimension is the inner loop in index
     # on interval elements, the end points are the first two dofs
